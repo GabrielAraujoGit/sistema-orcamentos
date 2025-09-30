@@ -1,0 +1,13 @@
+# Arquivos de cache
+__pycache__/
+*.pyc
+
+# Banco de dados local
+pedidos.db
+
+# Arquivos de exportação
+*.xlsx
+*.pdf
+
+# Ambiente virtual
+venv/
