@@ -14,7 +14,6 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 
-
 def normalizar_chave(texto):
     texto = ''.join(c for c in unicodedata.normalize('NFD', texto)
                     if unicodedata.category(c) != 'Mn')
@@ -590,7 +589,7 @@ class SistemaPedidos:
             # formas de pagamento (somente se houver cartão preenchido)
             if tem_cartao:
                 elementos.append(Paragraph("Formas de Pagamento e Condições", estilos['Heading3']))
-                formas = [["À vista ou em até 3x sem juros no cartão - Orçamento válido por 10 dias"]]
+                formas = [[""]]
                 t_cond = Table(formas, colWidths=[530])
                 t_cond.setStyle(TableStyle([
                     ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
@@ -606,7 +605,7 @@ class SistemaPedidos:
         
 
 
-        def importar_dados(self, tipo="clientes"):
+    def importar_dados(self, tipo="clientes"):
             caminho = filedialog.askopenfilename(
                 filetypes=[("Planilhas", "*.xlsx *.csv"), ("Todos", "*.*")]
             )
