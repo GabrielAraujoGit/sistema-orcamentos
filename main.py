@@ -14,6 +14,39 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 
+def formatar_moeda(valor):
+    """
+    Formata número/int/str/None para padrão brasileiro: R$ 1.234,56
+    Aceita:
+      - None -> R$ 0,00
+      - '1.234,56' ou '1234.56' ou 'R$ 1.234,56'
+      - int/float
+    """
+    try:
+        if valor is None:
+            v = 0.0
+        elif isinstance(valor, str):
+            s = valor.strip().replace('R$', '').replace(' ', '')
+            if s == '':
+                v = 0.0
+            else:
+                # Normaliza milhares e decimais
+                if ',' in s and '.' in s:
+                    s = s.replace('.', '').replace(',', '.')
+                else:
+                    s = s.replace('.', '').replace(',', '.')
+                v = float(s)
+        else:
+            v = float(valor)
+    except Exception:
+        v = 0.0
+
+    texto = f"{v:,.2f}"            # ex: "1234.56" -> "1,234.56"
+    texto = texto.replace(",", "V").replace(".", ",").replace("V", ".")  # -> "1.234,56"
+    return f"R$ {texto}"
+
+
+
 
 def normalizar_chave(texto):
     texto = ''.join(c for c in unicodedata.normalize('NFD', texto)
@@ -42,6 +75,8 @@ class SistemaPedidos:
         self.criar_aba_clientes()
         self.criar_aba_produtos()
         self.criar_aba_pedidos()
+        self.criar_aba_consulta_orcamentos()
+
     
     def init_db(self):
         self.conn = sqlite3.connect('pedidos.db')
@@ -76,6 +111,7 @@ class SistemaPedidos:
             )
         ''')
         # pedidos
+        # pedidos
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS pedidos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,22 +125,29 @@ class SistemaPedidos:
                 valor_cofins REAL,
                 valor_total REAL,
                 representante TEXT,
+                condicoes_pagamento TEXT,
+                desconto REAL DEFAULT 0,
+                status TEXT DEFAULT 'Em Aberto',
+                observacoes TEXT,
+                validade TEXT,
                 FOREIGN KEY (cliente_id) REFERENCES clientes (id)
             )
         ''')
+
         # itens_pedido
+        # Itens do pedido (ligados ao número do orçamento)
         self.cursor.execute('''
-            CREATE TABLE IF NOT EXISTS itens_pedido (
+            CREATE TABLE IF NOT EXISTS pedido_itens (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                pedido_id INTEGER NOT NULL,
+                numero_pedido TEXT NOT NULL,
                 produto_id INTEGER NOT NULL,
-                quantidade INTEGER NOT NULL,
+                qtd REAL NOT NULL,
                 valor_unitario REAL NOT NULL,
-                valor_total REAL NOT NULL,
-                FOREIGN KEY (pedido_id) REFERENCES pedidos (id),
+                FOREIGN KEY (numero_pedido) REFERENCES pedidos (numero_pedido),
                 FOREIGN KEY (produto_id) REFERENCES produtos (id)
             )
         ''')
+
         self.conn.commit()
     
     def calcular_totais(self, itens):
@@ -122,6 +165,8 @@ class SistemaPedidos:
         return subtotal, total_icms, total_ipi, total_pis, total_cofins, total
 
     # ------------------- Clientes -------------------
+    
+    
     def criar_aba_clientes(self):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Clientes")
@@ -169,7 +214,69 @@ class SistemaPedidos:
         self.tree_clientes.bind("<Double-1>", self.editar_cliente)
         
         self.carregar_clientes()
+    def criar_aba_consulta_orcamentos(self):
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text="Consultar Orçamentos")
+
+        search_frame = ttk.LabelFrame(frame, text="Buscar Orçamento", padding=10)
+        search_frame.pack(fill="x", padx=10, pady=10)
+
+        ttk.Label(search_frame, text="Número do Orçamento:").pack(side="left", padx=5)
+        self.entry_busca_orc = ttk.Entry(search_frame, width=20)
+        self.entry_busca_orc.pack(side="left", padx=5)
+        ttk.Button(search_frame, text="Buscar", command=self.buscar_orcamento).pack(side="left", padx=5)
+
+        # Treeview para mostrar resultados
+        list_frame = ttk.LabelFrame(frame, text="Resultados", padding=10)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        cols = ("Número", "Data", "Cliente", "Total", "Representante")
+        self.tree_orcamentos = ttk.Treeview(list_frame, columns=cols, show="headings", height=10)
+        for col in cols:
+            self.tree_orcamentos.heading(col, text=col)
+            self.tree_orcamentos.column(col, width=150)
+        self.tree_orcamentos.pack(fill="both", expand=True)
+
+    def buscar_orcamento(self):
+        numero = self.entry_busca_orc.get().strip()
+
+        # Limpa resultados anteriores
+        for item in self.tree_orcamentos.get_children():
+            self.tree_orcamentos.delete(item)
+
+        if numero:  
+            # Busca parcial se o usuário digitou algo
+            self.cursor.execute('''
+                SELECT p.numero_pedido, p.data_pedido, c.razao_social, p.valor_total, p.representante
+                FROM pedidos p
+                JOIN clientes c ON p.cliente_id = c.id
+                WHERE p.numero_pedido LIKE ?
+            ''', (f"%{numero}%",))
+        else:
+            # Se não digitou nada → traz todos
+            self.cursor.execute('''
+                SELECT p.numero_pedido, p.data_pedido, c.razao_social, p.valor_total, p.representante
+                FROM pedidos p
+                JOIN clientes c ON p.cliente_id = c.id
+                ORDER BY p.id DESC
+            ''')
+
+        rows = self.cursor.fetchall()
+
+        if not rows:
+            messagebox.showinfo("Resultado", "Nenhum orçamento encontrado!")
+            return
+
+        for row in rows:
+            valores = list(row)
+            valores[3] = formatar_moeda(valores[3])  # coluna "Total"
+            self.tree_orcamentos.insert("", "end", values=valores)
+
+
+
+
     
+
     def salvar_cliente(self):
             try:
                 dados = {k: v.get() for k, v in self.cliente_entries.items()}
@@ -344,9 +451,9 @@ class SistemaPedidos:
         self.entry_data_orc = ttk.Entry(header_frame, width=15)
         self.entry_data_orc.grid(row=0, column=1, padx=5)
         self.entry_data_orc.insert(0, datetime.now().strftime('%d/%m/%Y'))
-        ttk.Label(header_frame, text="Nº do Pedido:").grid(row=0, column=2, sticky='w', padx=5)
-        self.entry_numero = ttk.Entry(header_frame, width=20)
-        self.entry_numero.grid(row=0, column=3, padx=5)
+        ttk.Label(header_frame, text="Nº do Orçamento:").grid(row=0, column=2, sticky='w', padx=5)
+        self.label_numero_orc = ttk.Label(header_frame, text="Será gerado ao salvar")
+        self.label_numero_orc.grid(row=0, column=3, padx=5)
         ttk.Label(header_frame, text="Representante:").grid(row=0, column=4, sticky='w', padx=5)
         self.entry_representante = ttk.Entry(header_frame, width=25)
         self.entry_representante.grid(row=0, column=5, padx=5)
@@ -361,7 +468,29 @@ class SistemaPedidos:
             e = ttk.Entry(card_frame, width=30)
             e.grid(row=i//3, column=(i%3)*2+1, padx=5, pady=3)
             self.card_entries[normalizar_chave(l)] = e
-        
+                # Campos adicionais do orçamento
+        extra_frame = ttk.LabelFrame(frame, text="Informações Comerciais", padding=6)
+        extra_frame.pack(fill='x', padx=10, pady=6)
+
+        ttk.Label(extra_frame, text="Condições de Pagamento:").grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        self.entry_cond_pag = ttk.Entry(extra_frame, width=30)
+        self.entry_cond_pag.grid(row=0, column=1, padx=5)
+
+        ttk.Label(extra_frame, text="Validade (dias):").grid(row=0, column=2, sticky='w', padx=5, pady=2)
+        self.entry_validade = ttk.Entry(extra_frame, width=10)
+        self.entry_validade.grid(row=0, column=3, padx=5)
+
+        ttk.Label(extra_frame, text="Desconto (R$):").grid(row=1, column=0, sticky='w', padx=5, pady=2)
+        self.entry_desconto = ttk.Entry(extra_frame, width=15)
+        self.entry_desconto.grid(row=1, column=1, padx=5)
+
+        ttk.Label(extra_frame, text="Observações:").grid(row=2, column=0, sticky='nw', padx=5, pady=2)
+        self.text_obs = tk.Text(extra_frame, width=80, height=3)
+        self.text_obs.grid(row=2, column=1, columnspan=3, padx=5, pady=2)
+
+
+
+
         # seleção cliente / produto
         top_frame = ttk.LabelFrame(frame, text="Novo Item", padding=6)
         top_frame.pack(fill='x', padx=10, pady=6)
@@ -438,7 +567,7 @@ class SistemaPedidos:
             if produto:
                 codigo, desc, valor = produto
                 total = valor * qtd
-                self.tree_pedido_items.insert('', 'end', values=(f"{codigo} - {desc}", qtd, f"R$ {valor:.2f}", f"R$ {total:.2f}"))
+                self.tree_pedido_items.insert('', 'end', values=(f"{codigo} - {desc}", qtd, formatar_moeda(valor), formatar_moeda(total)))
                 self.itens_pedido_temp.append({'produto_id': produto_id, 'codigo': codigo, 'descricao': desc, 'qtd': qtd, 'valor': float(valor)})
                 self.atualizar_totais()
                 self.entry_qtd.delete(0, tk.END)
@@ -468,11 +597,16 @@ class SistemaPedidos:
             total_cofins += base * (aliq_cofins or 0) / 100
 
         total_impostos = total_icms + total_ipi + total_pis + total_cofins
-        total = subtotal + total_impostos
+        desconto = float(self.entry_desconto.get() or 0)
+        total = subtotal + total_impostos - desconto
 
-        self.label_subtotal.config(text=f"Subtotal: R$ {subtotal:.2f}")
-        self.label_impostos.config(text=f"Impostos: R$ {total_impostos:.2f}")
-        self.label_total.config(text=f"TOTAL: R$ {total:.2f}")
+        self.label_subtotal.config(text=f"Subtotal: {formatar_moeda(subtotal)}")
+        self.label_impostos.config(text=f"Impostos: {formatar_moeda(total_impostos)}")
+        self.label_total.config(text=f"TOTAL: {formatar_moeda(total)}")
+
+
+
+        
 
     
     def limpar_pedido(self):
@@ -494,157 +628,218 @@ class SistemaPedidos:
             return
         try:
             cliente_id = int(self.combo_cliente.get().split(' - ')[0])
-            numero_pedido = self.entry_numero.get() or f"ORC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            self.cursor.execute("SELECT COUNT(*) FROM pedidos")
+            total_registros = self.cursor.fetchone()[0] or 0
+            numero_pedido = f"ORC-{total_registros+1:04d}"
+            self.label_numero_orc.config(text=numero_pedido)
+
             data_pedido = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            subtotal = sum(item['qtd'] * item['valor'] for item in self.itens_pedido_temp)
-            impostos = subtotal * 0.20
-            total = subtotal + impostos
+
+            # 🔹 Calcula todos os totais corretamente
+            subtotal, total_icms, total_ipi, total_pis, total_cofins, total = self.calcular_totais(self.itens_pedido_temp)
+
             representante = self.entry_representante.get()
+            cond_pag = self.entry_cond_pag.get()
+            validade = self.entry_validade.get()
+            desconto = float(self.entry_desconto.get() or 0)
+            observacoes = self.text_obs.get("1.0", tk.END).strip()
+
+            # aplica desconto ao total
+            total -= desconto
+
+            # 🔹 Agora grava todos os impostos no banco
             self.cursor.execute('''
-                INSERT INTO pedidos (numero_pedido, data_pedido, cliente_id, valor_produtos, valor_icms, valor_total, representante)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (numero_pedido, data_pedido, cliente_id, subtotal, impostos, total, representante))
-            pedido_id = self.cursor.lastrowid
+                INSERT INTO pedidos 
+                (numero_pedido, data_pedido, cliente_id, valor_produtos, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_total, representante,
+                condicoes_pagamento, desconto, status, observacoes, validade)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (numero_pedido, data_pedido, cliente_id, subtotal, total_icms, total_ipi, total_pis, total_cofins, total,
+                representante, cond_pag, desconto, "Em Aberto", observacoes, validade))
+
+            # Inserir os itens do orçamento
             for item in self.itens_pedido_temp:
                 self.cursor.execute('''
-                    INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, valor_unitario, valor_total)
-                    VALUES (?, ?, ?, ?, ?)
-                ''', (pedido_id, item['produto_id'], item['qtd'], item['valor'], item['qtd'] * item['valor']))
+                    INSERT INTO pedido_itens (numero_pedido, produto_id, qtd, valor_unitario)
+                    VALUES (?, ?, ?, ?)
+                ''', (numero_pedido, item['produto_id'], item['qtd'], item['valor']))
+
             self.conn.commit()
             messagebox.showinfo("Sucesso", f"Orçamento {numero_pedido} salvo com sucesso!")
-            self.limpar_pedido()
+
+            # Limpar itens temporários
+            self.itens_pedido_temp.clear()
+            self.tree_pedido_items.delete(*self.tree_pedido_items.get_children())
+
         except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao finalizar orçamento: {e}")
+            messagebox.showerror("Erro", f"Falha ao salvar orçamento: {e}")
+
+
     
     # ------------------- Export PDF -------------------
-    def gerar_pdf_orcamento(self):    
-        if not self.combo_cliente.get() or not self.itens_pedido_temp:
-            messagebox.showwarning("Atenção", "Selecione um cliente e adicione itens para gerar PDF!")
-            return
-    
-        # Buscar dados do cliente
-        cliente_id = int(self.combo_cliente.get().split(' - ')[0])
-        self.cursor.execute('SELECT razao_social, cnpj, cidade, endereco, telefone, email FROM clientes WHERE id = ?', (cliente_id,))
-        cliente = self.cursor.fetchone()
-
-        # Calcular totais
-        subtotal, total_icms, total_ipi, total_pis, total_cofins, total = self.calcular_totais(self.itens_pedido_temp)
-
-        dados_orc = {
-            'data': self.entry_data_orc.get(),
-            'numero': self.entry_numero.get() or f"ORC-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            'representante': self.entry_representante.get(),
-            'cliente': {
-                'razao_social': cliente[0],
-                'cnpj': cliente[1],
-                'cidade': cliente[2],
-                'endereco': cliente[3] or '',
-                'telefone': cliente[4] or '',
-                'email': cliente[5] or ''
-            },
-            'produtos': self.itens_pedido_temp
-        }
-
-        # Nome do arquivo
-        cliente_nome = unicodedata.normalize('NFKD', dados_orc['cliente']['razao_social']).encode('ASCII', 'ignore').decode('ASCII')
-        cliente_nome = cliente_nome.replace(" ", "_")
-        nome_padrao = f"{cliente_nome}_{datetime.now().strftime('%Y-%m-%d')}.pdf"
-
-        caminho = filedialog.asksaveasfilename(defaultextension='.pdf', filetypes=[('PDF','*.pdf')], title='Salvar PDF', initialfile=nome_padrao)
-        if not caminho: return
-
+    def gerar_pdf_orcamento(self, numero_pedido=None):
         try:
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-            from reportlab.lib import colors
-            from reportlab.lib.styles import getSampleStyleSheet
+            # Se o botão chamar sem argumento, pega do label
+            if numero_pedido is None:
+                numero_pedido = self.label_numero_orc.cget("text")
 
-            doc = SimpleDocTemplate(caminho, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=30)
-            elementos = []
+            # Buscar dados do pedido principal
+            self.cursor.execute('''
+                SELECT p.data_pedido, c.razao_social, c.cnpj, c.endereco, c.cidade, c.estado,
+                    p.valor_produtos, p.valor_icms, p.valor_ipi, p.valor_pis, p.valor_cofins, p.valor_total,
+                    p.representante, p.condicoes_pagamento, p.desconto, p.status, p.observacoes, p.validade
+                FROM pedidos p
+                JOIN clientes c ON p.cliente_id = c.id
+                WHERE p.numero_pedido = ?
+            ''', (numero_pedido,))
+            pedido = self.cursor.fetchone()
+            if not pedido:
+                messagebox.showerror("Erro", "Pedido não encontrado no banco.")
+                return
+
+            (data_pedido, razao_social, cnpj, endereco, cidade, estado,
+            subtotal, total_icms, total_ipi, total_pis, total_cofins, total,
+            representante, cond_pag, desconto, status, observacoes, validade) = pedido
+
+            # Garantir que não existam valores None
+            subtotal = subtotal or 0.0
+            total_icms = total_icms or 0.0
+            total_ipi = total_ipi or 0.0
+            total_pis = total_pis or 0.0
+            total_cofins = total_cofins or 0.0
+            total = total or 0.0
+            desconto = desconto or 0.0
+            cond_pag = cond_pag or ""
+            observacoes = observacoes or ""
+            validade = validade or ""
+            representante = representante or ""
+            status = status or "Em Aberto"
+
+            # Buscar itens do pedido
+            self.cursor.execute('''
+                SELECT pr.codigo, pr.descricao, pi.qtd, pi.valor_unitario
+                FROM pedido_itens pi
+                JOIN produtos pr ON pi.produto_id = pr.id
+                WHERE pi.numero_pedido = ?
+            ''', (numero_pedido,))
+            produtos = self.cursor.fetchall()
+
+            # Montar PDF
+            nome_arquivo = f"orcamento_{numero_pedido}.pdf"
+            doc = SimpleDocTemplate(nome_arquivo, pagesize=A4,
+                                    leftMargin=30, rightMargin=30, topMargin=40, bottomMargin=40)
             estilos = getSampleStyleSheet()
+            elementos = []
 
-            # Cabeçalho: logo à esquerda + título centralizado
-            cabecalho_logo = []
+            # Logo da empresa
             try:
-                logo = Image("logo.png", width=100, height=25)
-                cabecalho_logo.append([logo, Paragraph("<b>ORÇAMENTO DE PRODUTOS E SERVIÇOS</b>", estilos['Title'])])
+                from reportlab.platypus import Image
+                logo = Image("logo.png", width=120, height=30)  # ajuste conforme a sua logo
+                logo.hAlign = 'LEFT'
+                elementos.append(logo)
             except:
-                cabecalho_logo.append(["", Paragraph("<b>ORÇAMENTO DE PRODUTOS E SERVIÇOS</b>", estilos['Title'])])
+                pass
 
-            t_logo = Table(cabecalho_logo, colWidths=[150, 330], hAlign="CENTER")
-            t_logo.setStyle(TableStyle([
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('ALIGN', (0,0), (0,0), 'LEFT'),    # logo à esquerda
-                ('ALIGN', (1,0), (1,0), 'CENTER'),  # título centralizado
-            ]))
-            elementos.append(t_logo)
+            # Título e número do orçamento
+            titulo = Paragraph("<para align='center'><font size=18><b>ORÇAMENTO</b></font></para>", estilos['Normal'])
+            elementos.append(titulo)
+            elementos.append(Spacer(1, 6))
+
+            num_orc = Paragraph(f"<para align='center'><font size=12>Orçamento nº <b>{numero_pedido}</b></font></para>",
+                                estilos['Normal'])
+            elementos.append(num_orc)
             elementos.append(Spacer(1, 20))
 
-            # Dados do cliente
-            cabecalho = [
-                ['Cliente:', dados_orc['cliente']['razao_social'], 'Data:', dados_orc['data']],
-                ['CNPJ:', dados_orc['cliente']['cnpj'], 'Cidade:', dados_orc['cliente']['cidade']],
-                ['Endereço:', dados_orc['cliente']['endereco'], 'Telefone:', dados_orc['cliente']['telefone']],
-                ['Email:', dados_orc['cliente']['email'], 'Representante:', dados_orc['representante']]
+            # Informações do cliente (tabela)
+            info_cliente = [
+                ["Data:", data_pedido],
+                ["Cliente:", razao_social],
+                ["CNPJ:", cnpj],
+                ["Endereço:", f"{endereco}, {cidade} - {estado}"],
+                ["Representante:", representante],
+                ["Status:", status],
             ]
-            t_cab = Table(cabecalho, colWidths=[70, 200, 70, 180], hAlign="LEFT")
-            t_cab.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            t_info = Table(info_cliente, colWidths=[100, 380])
+            t_info.setStyle(TableStyle([
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
             ]))
-            elementos.append(t_cab)
+            elementos.append(t_info)
             elementos.append(Spacer(1, 20))
 
-            # Itens do orçamento
-            tabela = [['Código', 'Descrição', 'Qtd', 'Unitário', 'Total']]
-            for p in dados_orc['produtos']:
-                total_item = p['qtd'] * p['valor']
-                tabela.append([p['codigo'], p['descricao'], str(p['qtd']), f"R$ {p['valor']:.2f}", f"R$ {total_item:.2f}"])
-            t_prod = Table(tabela, colWidths=[70, 230, 50, 80, 80], hAlign="LEFT")
-            t_prod.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-1), 0.5, colors.black),
-                ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('ALIGN', (2,1), (-1,-1), 'CENTER')
+            # Tabela de produtos
+            tabela = [["Código", "Descrição", "Qtd", "Valor Unit.", "Total"]]
+            for codigo, descricao, qtd, valor_unit in produtos:
+                total_item = (qtd or 0) * (valor_unit or 0)
+                tabela.append([
+                    codigo,
+                    descricao,
+                    str(qtd),
+                    formatar_moeda(valor_unit or 0),
+                    formatar_moeda(total_item)
+                ])
+
+            t = Table(tabela, colWidths=[70, 230, 50, 90, 90], repeatRows=1, hAlign="CENTER")
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#003366")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, 0), 10),
             ]))
-            elementos.append(t_prod)
+            elementos.append(t)
             elementos.append(Spacer(1, 20))
 
-            # Totais detalhados
+            # Totais
             totais = [
-                ['Subtotal', f"R$ {subtotal:.2f}"],
-                ['ICMS', f"R$ {total_icms:.2f}"],
-                ['IPI', f"R$ {total_ipi:.2f}"],
-                ['PIS', f"R$ {total_pis:.2f}"],
-                ['COFINS', f"R$ {total_cofins:.2f}"],
-                ['TOTAL GERAL', f"R$ {total:.2f}"]
+                ['Subtotal', formatar_moeda(subtotal)],
+                ['ICMS', formatar_moeda(total_icms)],
+                ['IPI', formatar_moeda(total_ipi)],
+                ['PIS', formatar_moeda(total_pis)],
+                ['COFINS', formatar_moeda(total_cofins)],
             ]
-            t_tot = Table(totais, colWidths=[430, 100], hAlign="LEFT")
+            if desconto:
+                totais.append(['Desconto', f"- {formatar_moeda(desconto)}"])
+            totais.append(['TOTAL GERAL', formatar_moeda(total - desconto)])
+            GRID_COLOR = colors.HexColor("#D1D5DB")
+                
+            t_tot = Table(totais, colWidths=[400, 100], hAlign="RIGHT")
             t_tot.setStyle(TableStyle([
-                ('GRID', (0,0), (-1,-2), 0.5, colors.grey),
-                ('ALIGN', (1,0), (1,-1), 'RIGHT'),
-                ('FONTNAME', (0,0), (-1,-2), 'Helvetica'),
-                ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
-                ('TEXTCOLOR', (0,-1), (-1,-1), colors.white),
-                ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#4F81BD")),
-            ]))
+            ('GRID', (0,0), (-1,-1), 0.5, GRID_COLOR),
+            ('ALIGN', (1,0), (1,-1), 'RIGHT'),
+            ('FONTNAME', (0,0), (-1,-2), 'Helvetica'),
+            ('FONTNAME', (0,-1), (-1,-1), 'Helvetica-Bold'),
+            ('TEXTCOLOR', (0,-1), (-1,-1), colors.white),
+            ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#0073FF")),
+        ]))
+
             elementos.append(t_tot)
-            elementos.append(Spacer(1, 30))
+            elementos.append(Spacer(1, 20))
 
-            # Observações
-            elementos.append(Paragraph("<b><i>Observações:</i></b>", estilos['Normal']))
-            elementos.append(Paragraph("Orçamento válido por 10 dias. Valores sujeitos a alteração sem aviso prévio.", estilos['Normal']))
-            elementos.append(Spacer(1, 60))
+            # Condições e observações
+            if cond_pag:
+                elementos.append(Paragraph(f"<b>Condições de Pagamento:</b> {cond_pag}", estilos['Normal']))
+            if validade:
+                elementos.append(Paragraph(f"<b>Validade:</b> {validade} dias", estilos['Normal']))
+            if observacoes:
+                elementos.append(Paragraph(f"<b>Observações:</b> {observacoes}", estilos['Normal']))
+            elementos.append(Spacer(1, 20))
 
-            # Assinatura
-            elementos.append(Paragraph("_____________________________________", estilos['Normal']))
-            elementos.append(Paragraph("Assinatura do Cliente", estilos['Normal']))
+            # Rodapé fixo
+            elementos.append(Paragraph("<font size=9>Orçamento válido conforme condições acima.</font>", estilos['Italic']))
+            elementos.append(Paragraph("<font size=9>Valores sujeitos a alterações sem aviso prévio.</font>",
+                                    estilos['Italic']))
 
-            # Gerar PDF
+            # Gerar arquivo
             doc.build(elementos)
-            messagebox.showinfo("Sucesso", f"PDF gerado em:\n{caminho}")
+            messagebox.showinfo("Sucesso", f"PDF gerado: {nome_arquivo}")
+
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao gerar PDF: {e}")
+
+
   
     def importar_dados(self, tipo="clientes"):
     
@@ -670,7 +865,7 @@ class SistemaPedidos:
                         with open(caminho, newline='', encoding='utf-8') as f:
                             sample = f.read(2048)
                             f.seek(0)
-                            try:
+                            try:    
                                 dialect = csv.Sniffer().sniff(sample, delimiters=";,")
                                 delim = dialect.delimiter
                             except Exception:
@@ -796,8 +991,6 @@ class SistemaPedidos:
                 except Exception as e:
                     messagebox.showerror("Erro", f"Falha ao importar: {e}")
 
-    
-    # ------------------- Export Excel ----------------    -
     def exportar_excel_orcamento(self):
         if not self.combo_cliente.get() or not self.itens_pedido_temp:
             messagebox.showwarning("Atenção", "Selecione um cliente e adicione itens para exportar Excel!")
@@ -811,7 +1004,7 @@ class SistemaPedidos:
 
         dados_orc = {
             'data': self.entry_data_orc.get(),
-            'numero': self.entry_numero.get() or f"ORC-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+            'numero': self.label_numero_orc.cget("text") or f"ORC-{datetime.now().strftime('%Y%m%d%H%M%S')}",
             'representante': self.entry_representante.get(),
             'cliente': {
                 'razao_social': cliente[0],
@@ -826,63 +1019,308 @@ class SistemaPedidos:
 
         cliente_nome = unicodedata.normalize('NFKD', dados_orc['cliente']['razao_social']).encode('ASCII', 'ignore').decode('ASCII')
         cliente_nome = cliente_nome.replace(" ", "_")
-        nome_padrao = f"{cliente_nome}_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
+        nome_padrao = f"Orcamento_{cliente_nome}_{datetime.now().strftime('%Y%m%d')}.xlsx"
 
-        caminho = filedialog.asksaveasfilename(defaultextension='.xlsx', filetypes=[('Excel','*.xlsx')], title='Salvar Excel', initialfile=nome_padrao)
+        caminho = filedialog.asksaveasfilename(defaultextension='.xlsx', filetypes=[('Excel','*.xlsx')], title='Salvar Orçamento', initialfile=nome_padrao)
         if not caminho: return
 
         try:
             import openpyxl
             from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
             from openpyxl.utils import get_column_letter
+            from openpyxl.drawing.image import Image as XLImage
 
             wb = openpyxl.Workbook()
 
-            # Aba Cliente
-            ws_cliente = wb.active
-            ws_cliente.title = "Cliente"
-            ws_cliente.append(["Razão Social", dados_orc['cliente']['razao_social']])
-            ws_cliente.append(["CNPJ", dados_orc['cliente']['cnpj']])
-            ws_cliente.append(["Endereço", dados_orc['cliente']['endereco']])
-            ws_cliente.append(["Cidade", dados_orc['cliente']['cidade']])
-            ws_cliente.append(["Telefone", dados_orc['cliente']['telefone']])
-            ws_cliente.append(["Email", dados_orc['cliente']['email']])
+            # Paleta de cores profissional
+            COR_PRIMARIA = "1E3A8A"      # Azul escuro corporativo
+            COR_SECUNDARIA = "3B82F6"    # Azul médio
+            COR_DESTAQUE = "10B981"      # Verde para totais
+            COR_HEADER = "F3F4F6"        # Cinza claro
+            COR_TEXTO_ESCURO = "1F2937"  # Cinza escuro
 
-            # Aba Produtos
-            ws_prod = wb.create_sheet("Produtos")
-            headers = ['Código', 'Descrição', 'Qtd', 'Unitário', 'Total']
-            ws_prod.append(headers)
-            for p in dados_orc['produtos']:
-                linha = [p['codigo'], p['descricao'], p['qtd'], p['valor'], f"=C{ws_prod.max_row+1}*D{ws_prod.max_row+1}"]
-                ws_prod.append(linha)
+            # Estilos refinados
+            thin = Side(border_style="thin", color="D1D5DB")
+            border_light = Border(top=thin, left=thin, right=thin, bottom=thin)
+            
+            medium = Side(border_style="medium", color=COR_PRIMARIA)
+            border_strong = Border(top=medium, left=medium, right=medium, bottom=medium)
 
-            # Aba Resumo
-            ws_resumo = wb.create_sheet("Resumo")
-            ws_resumo.append(["Subtotal", subtotal])
-            ws_resumo.append(["ICMS", total_icms])
-            ws_resumo.append(["IPI", total_ipi])
-            ws_resumo.append(["PIS", total_pis])
-            ws_resumo.append(["COFINS", total_cofins])
-            ws_resumo.append(["TOTAL GERAL", total])
+            # ------------------- ABA PRINCIPAL - ORÇAMENTO -------------------
+            ws = wb.active
+            ws.title = "Orçamento"
 
-            # Formatação
-            bold = Font(bold=True)
-            for ws in [ws_cliente, ws_prod, ws_resumo]:
-                for col in ws.columns:
-                    max_len = max(len(str(c.value)) if c.value else 0 for c in col)
-                    ws.column_dimensions[get_column_letter(col[0].column)].width = max_len + 2
+            # Definir larguras das colunas
+            ws.column_dimensions['A'].width = 15
+            ws.column_dimensions['B'].width = 45
+            ws.column_dimensions['C'].width = 12
+            ws.column_dimensions['D'].width = 15
+            ws.column_dimensions['E'].width = 15
+            ws.column_dimensions['F'].width = 15
 
-            for row in ws_resumo.iter_rows():
-                row[0].font = bold
-                row[1].font = bold
+            # CABEÇALHO EMPRESA
+            linha_atual = 1
+            
+            # Logo (se existir)
+            try:
+                img = XLImage("logo.png")
+                img.width, img.height = 120, 50
+                ws.add_image(img, "A1")
+            except:
+                ws.merge_cells(f"A{linha_atual}:B{linha_atual}")
+                ws[f"A{linha_atual}"].value = "SUA EMPRESA"
+                ws[f"A{linha_atual}"].font = Font(size=18, bold=True, color=COR_PRIMARIA)
 
+            # Informações no cabeçalho
+            ws.merge_cells(f"D{linha_atual}:F{linha_atual}")
+            ws[f"D{linha_atual}"].value = "ORÇAMENTO"
+            ws[f"D{linha_atual}"].font = Font(size=20, bold=True, color=COR_PRIMARIA)
+            ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right", vertical="center")
+
+            linha_atual += 1
+            ws.merge_cells(f"D{linha_atual}:F{linha_atual}")
+            ws[f"D{linha_atual}"].value = f"Nº {dados_orc['numero']}"
+            ws[f"D{linha_atual}"].font = Font(size=11, color=COR_TEXTO_ESCURO)
+            ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right")
+
+            linha_atual += 1
+            ws.merge_cells(f"D{linha_atual}:F{linha_atual}")
+            ws[f"D{linha_atual}"].value = f"Data: {dados_orc['data']}"
+            ws[f"D{linha_atual}"].font = Font(size=11, color=COR_TEXTO_ESCURO)
+            ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right")
+
+            linha_atual += 2
+
+            # SEÇÃO CLIENTE
+            ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
+            ws[f"A{linha_atual}"].value = "DADOS DO CLIENTE"
+            ws[f"A{linha_atual}"].font = Font(size=12, bold=True, color="FFFFFF")
+            ws[f"A{linha_atual}"].fill = PatternFill("solid", fgColor=COR_PRIMARIA)
+            ws[f"A{linha_atual}"].alignment = Alignment(horizontal="left", vertical="center")
+            ws.row_dimensions[linha_atual].height = 25
+
+            linha_atual += 1
+            
+            # Grid de informações do cliente
+            info_cliente = [
+                ["Razão Social:", dados_orc['cliente']['razao_social'], "CNPJ:", dados_orc['cliente']['cnpj']],
+                ["Endereço:", dados_orc['cliente']['endereco'], "Cidade:", dados_orc['cliente']['cidade']],
+                ["Telefone:", dados_orc['cliente']['telefone'], "E-mail:", dados_orc['cliente']['email']],
+                ["Representante:", dados_orc['representante'], "", ""]
+            ]
+
+            for info_row in info_cliente:
+                ws[f"A{linha_atual}"].value = info_row[0]
+                ws[f"A{linha_atual}"].font = Font(bold=True, size=10, color=COR_TEXTO_ESCURO)
+                ws[f"A{linha_atual}"].fill = PatternFill("solid", fgColor=COR_HEADER)
+                
+                ws.merge_cells(f"B{linha_atual}:C{linha_atual}")
+                ws[f"B{linha_atual}"].value = info_row[1]
+                ws[f"B{linha_atual}"].font = Font(size=10)
+                
+                if info_row[2]:
+                    ws[f"D{linha_atual}"].value = info_row[2]
+                    ws[f"D{linha_atual}"].font = Font(bold=True, size=10, color=COR_TEXTO_ESCURO)
+                    ws[f"D{linha_atual}"].fill = PatternFill("solid", fgColor=COR_HEADER)
+                    
+                    ws.merge_cells(f"E{linha_atual}:F{linha_atual}")
+                    ws[f"E{linha_atual}"].value = info_row[3]
+                    ws[f"E{linha_atual}"].font = Font(size=10)
+                
+                for col in ['A', 'B', 'C', 'D', 'E', 'F']:
+                    ws[f"{col}{linha_atual}"].border = border_light
+                
+                linha_atual += 1
+
+            linha_atual += 1
+
+            # SEÇÃO PRODUTOS
+            ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
+            ws[f"A{linha_atual}"].value = "ITENS DO ORÇAMENTO"
+            ws[f"A{linha_atual}"].font = Font(size=12, bold=True, color="FFFFFF")
+            ws[f"A{linha_atual}"].fill = PatternFill("solid", fgColor=COR_PRIMARIA)
+            ws[f"A{linha_atual}"].alignment = Alignment(horizontal="left", vertical="center")
+            ws.row_dimensions[linha_atual].height = 25
+
+            linha_atual += 1
+            linha_header = linha_atual
+
+            # Cabeçalho da tabela de produtos
+            headers = ['Código', 'Descrição', 'Quantidade', 'Valor Unit.', 'Subtotal', 'Total Item']
+            for idx, header in enumerate(headers, start=1):
+                col_letter = get_column_letter(idx)
+                ws[f"{col_letter}{linha_atual}"].value = header
+                ws[f"{col_letter}{linha_atual}"].font = Font(bold=True, size=10, color=COR_TEXTO_ESCURO)
+                ws[f"{col_letter}{linha_atual}"].fill = PatternFill("solid", fgColor=COR_HEADER)
+                ws[f"{col_letter}{linha_atual}"].alignment = Alignment(horizontal="center", vertical="center")
+                ws[f"{col_letter}{linha_atual}"].border = border_light
+            
+            ws.row_dimensions[linha_atual].height = 22
+
+            linha_atual += 1
+            linha_inicio_dados = linha_atual
+
+            # Dados dos produtos
+            for idx, p in enumerate(dados_orc['produtos'], start=1):
+                total_item = p['qtd'] * p['valor']
+                
+                ws[f"A{linha_atual}"].value = p['codigo']
+                ws[f"A{linha_atual}"].alignment = Alignment(horizontal="center")
+                
+                ws[f"B{linha_atual}"].value = p['descricao']
+                ws[f"B{linha_atual}"].alignment = Alignment(horizontal="left")
+                
+                ws[f"C{linha_atual}"].value = p['qtd']
+                ws[f"C{linha_atual}"].alignment = Alignment(horizontal="center")
+                ws[f"C{linha_atual}"].number_format = '#,##0'
+                
+                ws[f"D{linha_atual}"].value = p['valor']
+                ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right")
+                ws[f"D{linha_atual}"].number_format = 'R$ #,##0.00'
+                
+                ws[f"E{linha_atual}"].value = total_item
+                ws[f"E{linha_atual}"].alignment = Alignment(horizontal="right")
+                ws[f"E{linha_atual}"].number_format = 'R$ #,##0.00'
+                
+                ws[f"F{linha_atual}"].value = total_item
+                ws[f"F{linha_atual}"].alignment = Alignment(horizontal="right")
+                ws[f"F{linha_atual}"].number_format = 'R$ #,##0.00'
+                ws[f"F{linha_atual}"].font = Font(bold=True)
+
+                # Bordas e zebrado
+                fill_color = "FFFFFF" if idx % 2 == 0 else "F9FAFB"
+                for col in ['A', 'B', 'C', 'D', 'E', 'F']:
+                    ws[f"{col}{linha_atual}"].border = border_light
+                    ws[f"{col}{linha_atual}"].fill = PatternFill("solid", fgColor=fill_color)
+
+                linha_atual += 1
+
+            linha_atual += 1
+
+            # RESUMO FINANCEIRO
+            ws.merge_cells(f"A{linha_atual}:C{linha_atual}")
+            ws[f"A{linha_atual}"].value = "RESUMO FINANCEIRO"
+            ws[f"A{linha_atual}"].font = Font(size=11, bold=True, color=COR_PRIMARIA)
+            
+            linha_atual += 1
+
+            resumo_itens = [
+                ("Subtotal:", subtotal, False),
+                ("ICMS:", total_icms, False),
+                ("IPI:", total_ipi, False),
+                ("PIS:", total_pis, False),
+                ("COFINS:", total_cofins, False),
+            ]
+
+            for label, valor, _ in resumo_itens:
+                ws.merge_cells(f"D{linha_atual}:E{linha_atual}")
+                ws[f"D{linha_atual}"].value = label
+                ws[f"D{linha_atual}"].font = Font(size=10, color=COR_TEXTO_ESCURO)
+                ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right")
+                
+                ws[f"F{linha_atual}"].value = valor
+                ws[f"F{linha_atual}"].number_format = 'R$ #,##0.00'
+                ws[f"F{linha_atual}"].alignment = Alignment(horizontal="right")
+                ws[f"F{linha_atual}"].border = border_light
+                
+                linha_atual += 1
+
+            # TOTAL GERAL - Destaque especial
+            ws.merge_cells(f"D{linha_atual}:E{linha_atual}")
+            ws[f"D{linha_atual}"].value = "TOTAL GERAL"
+            ws[f"D{linha_atual}"].font = Font(size=13, bold=True, color="FFFFFF")
+            ws[f"D{linha_atual}"].fill = PatternFill("solid", fgColor=COR_DESTAQUE)
+            ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right", vertical="center")
+            ws[f"D{linha_atual}"].border = border_strong
+            
+            ws[f"F{linha_atual}"].value = total
+            ws[f"F{linha_atual}"].font = Font(size=13, bold=True, color="FFFFFF")
+            ws[f"F{linha_atual}"].fill = PatternFill("solid", fgColor=COR_DESTAQUE)
+            ws[f"F{linha_atual}"].number_format = 'R$ #,##0.00'
+            ws[f"F{linha_atual}"].alignment = Alignment(horizontal="right", vertical="center")
+            ws[f"F{linha_atual}"].border = border_strong
+            ws.row_dimensions[linha_atual].height = 28
+
+            linha_atual += 3
+
+            # CONDIÇÕES COMERCIAIS
+            ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
+            ws[f"A{linha_atual}"].value = "CONDIÇÕES COMERCIAIS"
+            ws[f"A{linha_atual}"].font = Font(size=11, bold=True, color=COR_PRIMARIA)
+            
+            linha_atual += 1
+            
+            condicoes = [
+                "• Validade do orçamento: 10 dias corridos",
+                "• Forma de pagamento: A combinar",
+                "• Prazo de entrega: Conforme disponibilidade",
+                "• Valores sujeitos a alteração sem aviso prévio",
+                "• Frete não incluso"
+            ]
+
+            for condicao in condicoes:
+                ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
+                ws[f"A{linha_atual}"].value = condicao
+                ws[f"A{linha_atual}"].font = Font(size=9, color=COR_TEXTO_ESCURO)
+                ws[f"A{linha_atual}"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+                linha_atual += 1
+
+            linha_atual += 2
+
+            # RODAPÉ
+            ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
+            ws[f"A{linha_atual}"].value = "Orçamento gerado automaticamente pelo sistema"
+            ws[f"A{linha_atual}"].font = Font(size=8, italic=True, color="9CA3AF")
+            ws[f"A{linha_atual}"].alignment = Alignment(horizontal="center")
+
+            # Filtros automáticos na tabela de produtos
+            ws.auto_filter.ref = f"A{linha_header}:F{linha_inicio_dados + len(dados_orc['produtos']) - 1}"
+
+            # ------------------- ABA DETALHAMENTO -------------------
+            ws_det = wb.create_sheet("Detalhamento")
+            ws_det.column_dimensions['A'].width = 20
+            ws_det.column_dimensions['B'].width = 50
+
+            linha = 1
+            ws_det[f"A{linha}"].value = "DETALHAMENTO DO ORÇAMENTO"
+            ws_det[f"A{linha}"].font = Font(size=14, bold=True, color=COR_PRIMARIA)
+            ws_det.merge_cells(f"A{linha}:B{linha}")
+            
+            linha += 2
+
+            detalhes = [
+                ["Número do Orçamento", dados_orc['numero']],
+                ["Data de Emissão", dados_orc['data']],
+                ["Cliente", dados_orc['cliente']['razao_social']],
+                ["CNPJ", dados_orc['cliente']['cnpj']],
+                ["Representante", dados_orc['representante']],
+                ["Quantidade de Itens", len(dados_orc['produtos'])],
+                ["Subtotal", f"R$ {subtotal:,.2f}"],
+                ["Impostos (ICMS+IPI+PIS+COFINS)", f"R$ {(total_icms + total_ipi + total_pis + total_cofins):,.2f}"],
+                ["Valor Total", f"R$ {total:,.2f}"]
+            ]
+
+            for detalhe in detalhes:
+                ws_det[f"A{linha}"].value = detalhe[0]
+                ws_det[f"A{linha}"].font = Font(bold=True, color=COR_TEXTO_ESCURO)
+                ws_det[f"A{linha}"].fill = PatternFill("solid", fgColor=COR_HEADER)
+                ws_det[f"A{linha}"].border = border_light
+                
+                ws_det[f"B{linha}"].value = detalhe[1]
+                ws_det[f"B{linha}"].border = border_light
+                
+                linha += 1
+
+            # Salvar
             wb.save(caminho)
-            messagebox.showinfo("Sucesso", f"Excel salvo em:\n{caminho}")
+            messagebox.showinfo("Sucesso", f"Orçamento exportado com sucesso!\n\n{caminho}")
+
         except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao exportar Excel: {e}")
+            messagebox.showerror("Erro", f"Falha ao exportar orçamento:\n{str(e)}")
+
 
     
-        def __del__(self):
+    def __del__(self):
             if hasattr(self, 'conn'):
                 self.conn.close()
 
