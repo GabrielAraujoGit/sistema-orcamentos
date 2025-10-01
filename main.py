@@ -1208,333 +1208,162 @@ class SistemaPedidos:
                     messagebox.showerror("Erro", f"Falha ao importar: {e}")
     
     
-    def exportar_excel_orcamento(self):
-        if not self.combo_cliente.get() or not self.itens_pedido_temp:
-            messagebox.showwarning("Atenção", "Selecione um cliente e adicione itens para exportar Excel!")
+    def exportar_excel_orcamento(self, numero_pedido=None):
+        import os
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        from datetime import datetime
+
+        # Caso não seja passado como parâmetro, tenta pegar do Treeview
+        if not numero_pedido:
+            item = self.tree_orcamentos.selection()
+            if item:
+                valores = self.tree_orcamentos.item(item[0], "values")
+                numero_pedido = valores[0]
+            else:
+                messagebox.showerror("Erro", "Nenhum orçamento selecionado.")
+                return
+
+        # Buscar dados do orçamento
+        self.cursor.execute('''
+            SELECT p.data_pedido, c.razao_social, c.cnpj, c.endereco, c.cidade, c.estado,
+                p.valor_total, p.representante, p.condicoes_pagamento, p.observacoes, p.validade
+            FROM pedidos p
+            JOIN clientes c ON p.cliente_id = c.id
+            WHERE p.numero_pedido = ?
+        ''', (numero_pedido,))
+        pedido = self.cursor.fetchone()
+
+        if not pedido:
+            messagebox.showerror("Erro", "Orçamento não encontrado.")
             return
-        
 
-        cliente_id = int(self.combo_cliente.get().split(' - ')[0])
-        self.cursor.execute('SELECT razao_social, cnpj, cidade, endereco, telefone, email FROM clientes WHERE id = ?', (cliente_id,))
-        cliente = self.cursor.fetchone()
-
-        subtotal, total_icms, total_ipi, total_pis, total_cofins, total = self.calcular_totais(self.itens_pedido_temp)
-
-        dados_orc = {
-            'data': self.entry_data_orc.get(),
-            'numero': self.label_numero_orc.cget("text") or f"ORC-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-            'representante': self.entry_representante.get(),
-            'cliente': {
-                'razao_social': cliente[0],
-                'cnpj': cliente[1],
-                'cidade': cliente[2],
-                'endereco': cliente[3] or '',
-                'telefone': cliente[4] or '',
-                'email': cliente[5] or ''
-            },
-            'produtos': self.itens_pedido_temp
-        }
-
-        cliente_nome = unicodedata.normalize('NFKD', dados_orc['cliente']['razao_social']).encode('ASCII', 'ignore').decode('ASCII')
-        cliente_nome = cliente_nome.replace(" ", "_")
-        nome_padrao = f"Orcamento_{cliente_nome}_{datetime.now().strftime('%Y%m%d')}.xlsx"
-
-        caminho = filedialog.asksaveasfilename(defaultextension='.xlsx', filetypes=[('Excel','*.xlsx')], title='Salvar Orçamento', initialfile=nome_padrao)
-        if not caminho: return
-
+        # Preparar dados
         try:
-            import openpyxl
-            from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
-            from openpyxl.utils import get_column_letter
-            from openpyxl.drawing.image import Image as XLImage
+            data_formatada = datetime.strptime(pedido[0], "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%y %H:%M")
+        except:
+            data_formatada = pedido[0]
 
-            wb = openpyxl.Workbook()
+        cliente, cnpj, endereco, cidade, estado, total, representante, cond_pag, obs, validade = (
+            pedido[1], pedido[2], pedido[3], pedido[4], pedido[5],
+            pedido[6], pedido[7], pedido[8], pedido[9], pedido[10]
+        )
 
-            # Paleta de cores profissional
-            COR_PRIMARIA = "1E3A8A"      # Azul escuro corporativo
-            COR_SECUNDARIA = "3B82F6"    # Azul médio
-            COR_DESTAQUE = "10B981"      # Verde para totais
-            COR_HEADER = "F3F4F6"        # Cinza claro
-            COR_TEXTO_ESCURO = "1F2937"  # Cinza escuro
+        partes_endereco = []
+        if endereco:
+            partes_endereco.append(endereco)
+        if cidade:
+            partes_endereco.append(cidade)
+        if estado:
+            partes_endereco.append(estado)
+        endereco_formatado = " - ".join(partes_endereco) if partes_endereco else "Não informado"
 
-            # Estilos refinados
-            thin = Side(border_style="thin", color="D1D5DB")
-            border_light = Border(top=thin, left=thin, right=thin, bottom=thin)
-            
-            medium = Side(border_style="medium", color=COR_PRIMARIA)
-            border_strong = Border(top=medium, left=medium, right=medium, bottom=medium)
+        # Criar planilha
+        wb = Workbook()
+        ws = wb.active
+        ws.title = f"Orçamento {numero_pedido}"
 
-            # ------------------- ABA PRINCIPAL - ORÇAMENTO -------------------
-            ws = wb.active
-            ws.title = "Orçamento"
+        # Estilos
+        bold_font = Font(bold=True, size=11)
+        header_fill = PatternFill("solid", fgColor="4472C4")  # azul
+        header_font = Font(bold=True, color="FFFFFF")
+        border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                        top=Side(style="thin"), bottom=Side(style="thin"))
 
-            # Definir larguras das colunas
-            ws.column_dimensions['A'].width = 15
-            ws.column_dimensions['B'].width = 45
-            ws.column_dimensions['C'].width = 12
-            ws.column_dimensions['D'].width = 15
-            ws.column_dimensions['E'].width = 15
-            ws.column_dimensions['F'].width = 15
+        # Cabeçalho
+        ws.merge_cells("A1:E1")
+        ws["A1"] = f"ORÇAMENTO Nº {numero_pedido}"
+        ws["A1"].font = Font(size=14, bold=True)
+        ws["A1"].alignment = Alignment(horizontal="center")
 
-            # CABEÇALHO EMPRESA
-            linha_atual = 1
-            
-            # Logo (se existir)
-            try:
-                img = XLImage("logo .png")
-                img.width, img.height = 120, 50
-                ws.add_image(img, "A1")
-            except:
-                ws.merge_cells(f"A{linha_atual}:B{linha_atual}")
-                ws[f"A{linha_atual}"].value = "SUA EMPRESA"
-                ws[f"A{linha_atual}"].font = Font(size=18, bold=True, color=COR_PRIMARIA)
+        ws["A3"], ws["B3"] = "Data:", data_formatada
+        ws["A4"], ws["B4"] = "Cliente:", cliente
+        ws["A5"], ws["B5"] = "CNPJ:", cnpj
+        ws["A6"], ws["B6"] = "Endereço:", endereco_formatado
+        ws["A7"], ws["B7"] = "Representante:", representante
+        ws["A8"], ws["B8"] = "Condições de Pagamento:", cond_pag
+        ws["A9"], ws["B9"] = "Validade:", f"{validade} dias"
+        ws["A10"], ws["B10"] = "Observações:", obs
 
-            # Informações no cabeçalho
-            ws.merge_cells(f"D{linha_atual}:F{linha_atual}")
-            ws[f"D{linha_atual}"].value = "ORÇAMENTO"
-            ws[f"D{linha_atual}"].font = Font(size=20, bold=True, color=COR_PRIMARIA)
-            ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right", vertical="center")
+        # Itens do orçamento
+        ws.append([])
+        linha_inicio = 12
+        colunas = ["Código", "Descrição", "Qtd", "Valor Unitário", "Total Item"]
 
-            linha_atual += 1
-            ws.merge_cells(f"D{linha_atual}:F{linha_atual}")
-            ws[f"D{linha_atual}"].value = f"Nº {dados_orc['numero']}"
-            ws[f"D{linha_atual}"].font = Font(size=11, color=COR_TEXTO_ESCURO)
-            ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right")
+        for col, nome in enumerate(colunas, start=1):
+            cel = ws.cell(row=linha_inicio, column=col, value=nome)
+            cel.font = header_font
+            cel.fill = header_fill
+            cel.alignment = Alignment(horizontal="center")
+            cel.border = border
 
-            linha_atual += 1
-            ws.merge_cells(f"D{linha_atual}:F{linha_atual}")
-            ws[f"D{linha_atual}"].value = f"Data: {dados_orc['data']}"
-            ws[f"D{linha_atual}"].font = Font(size=11, color=COR_TEXTO_ESCURO)
-            ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right")
+        # Buscar itens
+        self.cursor.execute('''
+            SELECT pr.codigo, pr.descricao, pi.qtd, pi.valor_unitario
+            FROM pedido_itens pi
+            JOIN produtos pr ON pi.produto_id = pr.id
+            WHERE pi.numero_pedido = ?
+        ''', (numero_pedido,))
+        itens = self.cursor.fetchall()
 
-            linha_atual += 2
+        linha = linha_inicio + 1
+        subtotal = 0
 
-            # SEÇÃO CLIENTE
-            ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
-            ws[f"A{linha_atual}"].value = "DADOS DO CLIENTE"
-            ws[f"A{linha_atual}"].font = Font(size=12, bold=True, color="FFFFFF")
-            ws[f"A{linha_atual}"].fill = PatternFill("solid", fgColor=COR_PRIMARIA)
-            ws[f"A{linha_atual}"].alignment = Alignment(horizontal="left", vertical="center")
-            ws.row_dimensions[linha_atual].height = 25
+        for cod, desc, qtd, v_unit in itens:
+            v_total_item = qtd * v_unit
+            subtotal += v_total_item
 
-            linha_atual += 1
-            
-            # Grid de informações do cliente
-            info_cliente = [
-                ["Razão Social:", dados_orc['cliente']['razao_social'], "CNPJ:", dados_orc['cliente']['cnpj']],
-                ["Endereço:", dados_orc['cliente']['endereco'], "Cidade:", dados_orc['cliente']['cidade']],
-                ["Telefone:", dados_orc['cliente']['telefone'], "E-mail:", dados_orc['cliente']['email']],
-                ["Representante:", dados_orc['representante'], "", ""]
-            ]
+            dados = [cod, desc, qtd, v_unit, v_total_item]
+            for col, valor in enumerate(dados, start=1):
+                cel = ws.cell(row=linha, column=col, value=valor)
+                if col >= 3:  # qtd, unitário e total
+                    cel.number_format = 'R$ #,##0.00'
+                    cel.alignment = Alignment(horizontal="right")
+                cel.border = border
+            linha += 1
 
-            for info_row in info_cliente:
-                ws[f"A{linha_atual}"].value = info_row[0]
-                ws[f"A{linha_atual}"].font = Font(bold=True, size=10, color=COR_TEXTO_ESCURO)
-                ws[f"A{linha_atual}"].fill = PatternFill("solid", fgColor=COR_HEADER)
-                
-                ws.merge_cells(f"B{linha_atual}:C{linha_atual}")
-                ws[f"B{linha_atual}"].value = info_row[1]
-                ws[f"B{linha_atual}"].font = Font(size=10)
-                
-                if info_row[2]:
-                    ws[f"D{linha_atual}"].value = info_row[2]
-                    ws[f"D{linha_atual}"].font = Font(bold=True, size=10, color=COR_TEXTO_ESCURO)
-                    ws[f"D{linha_atual}"].fill = PatternFill("solid", fgColor=COR_HEADER)
-                    
-                    ws.merge_cells(f"E{linha_atual}:F{linha_atual}")
-                    ws[f"E{linha_atual}"].value = info_row[3]
-                    ws[f"E{linha_atual}"].font = Font(size=10)
-                
-                for col in ['A', 'B', 'C', 'D', 'E', 'F']:
-                    ws[f"{col}{linha_atual}"].border = border_light
-                
-                linha_atual += 1
+        # Resumo de totais
+        linha += 1
+        resumo = [
+            ("Subtotal:", subtotal),
+        ]
 
-            linha_atual += 1
+        desconto = float(self.entry_desconto.get() or 0)
+        if desconto > 0:
+            resumo.append(("Desconto:", -desconto))
 
-            # SEÇÃO PRODUTOS
-            ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
-            ws[f"A{linha_atual}"].value = "ITENS DO ORÇAMENTO"
-            ws[f"A{linha_atual}"].font = Font(size=12, bold=True, color="FFFFFF")
-            ws[f"A{linha_atual}"].fill = PatternFill("solid", fgColor=COR_PRIMARIA)
-            ws[f"A{linha_atual}"].alignment = Alignment(horizontal="left", vertical="center")
-            ws.row_dimensions[linha_atual].height = 25
+        total_geral = subtotal - desconto
 
-            linha_atual += 1
-            linha_header = linha_atual
+        for label, valor in resumo:
+            ws.merge_cells(start_row=linha, start_column=4, end_row=linha, end_column=4)
+            ws.cell(row=linha, column=4, value=label).alignment = Alignment(horizontal="right")
+            ws.cell(row=linha, column=4).font = bold_font
+            ws.cell(row=linha, column=5, value=valor).number_format = 'R$ #,##0.00'
+            linha += 1
 
-            # Cabeçalho da tabela de produtos
-            headers = ['Código', 'Descrição', 'Quantidade', 'Valor Unit.', 'Subtotal', 'Total Item']
-            for idx, header in enumerate(headers, start=1):
-                col_letter = get_column_letter(idx)
-                ws[f"{col_letter}{linha_atual}"].value = header
-                ws[f"{col_letter}{linha_atual}"].font = Font(bold=True, size=10, color=COR_TEXTO_ESCURO)
-                ws[f"{col_letter}{linha_atual}"].fill = PatternFill("solid", fgColor=COR_HEADER)
-                ws[f"{col_letter}{linha_atual}"].alignment = Alignment(horizontal="center", vertical="center")
-                ws[f"{col_letter}{linha_atual}"].border = border_light
-            
-            ws.row_dimensions[linha_atual].height = 22
+        # TOTAL GERAL
+        ws.merge_cells(start_row=linha, start_column=4, end_row=linha, end_column=4)
+        ws.cell(row=linha, column=4, value="TOTAL GERAL").alignment = Alignment(horizontal="right")
+        ws.cell(row=linha, column=4).font = Font(bold=True, size=12, color="FFFFFF")
+        ws.cell(row=linha, column=4).fill = PatternFill("solid", fgColor="228B22")  # verde
+        cel_total = ws.cell(row=linha, column=5, value=total_geral)
+        cel_total.number_format = 'R$ #,##0.00'
+        cel_total.font = Font(bold=True, size=12, color="FFFFFF")
+        cel_total.fill = PatternFill("solid", fgColor="228B22")
 
-            linha_atual += 1
-            linha_inicio_dados = linha_atual
+        # Rodapé
+        linha += 2
+        ws.merge_cells(start_row=linha, start_column=1, end_row=linha, end_column=5)
+        ws.cell(row=linha, column=1, value=f"Gerado em {datetime.now().strftime('%d/%m/%y %H:%M')} - Sistema Interno de Orçamentos").alignment = Alignment(horizontal="center")
 
-            # Dados dos produtos
-            for idx, p in enumerate(dados_orc['produtos'], start=1):
-                total_item = p['qtd'] * p['valor']
-                
-                ws[f"A{linha_atual}"].value = p['codigo']
-                ws[f"A{linha_atual}"].alignment = Alignment(horizontal="center")
-                
-                ws[f"B{linha_atual}"].value = p['descricao']
-                ws[f"B{linha_atual}"].alignment = Alignment(horizontal="left")
-                
-                ws[f"C{linha_atual}"].value = p['qtd']
-                ws[f"C{linha_atual}"].alignment = Alignment(horizontal="center")
-                ws[f"C{linha_atual}"].number_format = '#,##0'
-                
-                ws[f"D{linha_atual}"].value = p['valor']
-                ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right")
-                ws[f"D{linha_atual}"].number_format = 'R$ #,##0.00'
-                
-                ws[f"E{linha_atual}"].value = total_item
-                ws[f"E{linha_atual}"].alignment = Alignment(horizontal="right")
-                ws[f"E{linha_atual}"].number_format = 'R$ #,##0.00'
-                
-                ws[f"F{linha_atual}"].value = total_item
-                ws[f"F{linha_atual}"].alignment = Alignment(horizontal="right")
-                ws[f"F{linha_atual}"].number_format = 'R$ #,##0.00'
-                ws[f"F{linha_atual}"].font = Font(bold=True)
+        # Ajustar largura das colunas
+        for col in range(1, 6):
+            ws.column_dimensions[chr(64 + col)].width = 20
 
-                # Bordas e zebrado
-                fill_color = "FFFFFF" if idx % 2 == 0 else "F9FAFB"
-                for col in ['A', 'B', 'C', 'D', 'E', 'F']:
-                    ws[f"{col}{linha_atual}"].border = border_light
-                    ws[f"{col}{linha_atual}"].fill = PatternFill("solid", fgColor=fill_color)
-
-                linha_atual += 1
-
-            linha_atual += 1
-
-            # RESUMO FINANCEIRO
-            ws.merge_cells(f"A{linha_atual}:C{linha_atual}")
-            ws[f"A{linha_atual}"].value = "RESUMO FINANCEIRO"
-            ws[f"A{linha_atual}"].font = Font(size=11, bold=True, color=COR_PRIMARIA)
-            
-            linha_atual += 1
-
-            resumo_itens = [
-                ("Subtotal:", subtotal, False),
-                ("ICMS:", total_icms, False),
-                ("IPI:", total_ipi, False),
-                ("PIS:", total_pis, False),
-                ("COFINS:", total_cofins, False),
-            ]
-
-            for label, valor, _ in resumo_itens:
-                ws.merge_cells(f"D{linha_atual}:E{linha_atual}")
-                ws[f"D{linha_atual}"].value = label
-                ws[f"D{linha_atual}"].font = Font(size=10, color=COR_TEXTO_ESCURO)
-                ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right")
-                
-                ws[f"F{linha_atual}"].value = valor
-                ws[f"F{linha_atual}"].number_format = 'R$ #,##0.00'
-                ws[f"F{linha_atual}"].alignment = Alignment(horizontal="right")
-                ws[f"F{linha_atual}"].border = border_light
-                
-                linha_atual += 1
-
-            # TOTAL GERAL - Destaque especial
-            ws.merge_cells(f"D{linha_atual}:E{linha_atual}")
-            ws[f"D{linha_atual}"].value = "TOTAL GERAL"
-            ws[f"D{linha_atual}"].font = Font(size=13, bold=True, color="FFFFFF")
-            ws[f"D{linha_atual}"].fill = PatternFill("solid", fgColor=COR_DESTAQUE)
-            ws[f"D{linha_atual}"].alignment = Alignment(horizontal="right", vertical="center")
-            ws[f"D{linha_atual}"].border = border_strong
-            
-            ws[f"F{linha_atual}"].value = total
-            ws[f"F{linha_atual}"].font = Font(size=13, bold=True, color="FFFFFF")
-            ws[f"F{linha_atual}"].fill = PatternFill("solid", fgColor=COR_DESTAQUE)
-            ws[f"F{linha_atual}"].number_format = 'R$ #,##0.00'
-            ws[f"F{linha_atual}"].alignment = Alignment(horizontal="right", vertical="center")
-            ws[f"F{linha_atual}"].border = border_strong
-            ws.row_dimensions[linha_atual].height = 28
-
-            linha_atual += 3
-
-            # CONDIÇÕES COMERCIAIS
-            ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
-            ws[f"A{linha_atual}"].value = "CONDIÇÕES COMERCIAIS"
-            ws[f"A{linha_atual}"].font = Font(size=11, bold=True, color=COR_PRIMARIA)
-            
-            linha_atual += 1
-            
-            condicoes = [
-                "• Validade do orçamento: 10 dias corridos",
-                "• Forma de pagamento: A combinar",
-                "• Prazo de entrega: Conforme disponibilidade",
-                "• Valores sujeitos a alteração sem aviso prévio",
-                "• Frete não incluso"
-            ]
-
-            for condicao in condicoes:
-                ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
-                ws[f"A{linha_atual}"].value = condicao
-                ws[f"A{linha_atual}"].font = Font(size=9, color=COR_TEXTO_ESCURO)
-                ws[f"A{linha_atual}"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
-                linha_atual += 1
-
-            linha_atual += 2
-
-            # RODAPÉ
-            ws.merge_cells(f"A{linha_atual}:F{linha_atual}")
-            ws[f"A{linha_atual}"].value = "Orçamento gerado automaticamente pelo sistema"
-            ws[f"A{linha_atual}"].font = Font(size=8, italic=True, color="9CA3AF")
-            ws[f"A{linha_atual}"].alignment = Alignment(horizontal="center")
-
-            # Filtros automáticos na tabela de produtos
-            ws.auto_filter.ref = f"A{linha_header}:F{linha_inicio_dados + len(dados_orc['produtos']) - 1}"
-
-            # ------------------- ABA DETALHAMENTO -------------------
-            ws_det = wb.create_sheet("Detalhamento")
-            ws_det.column_dimensions['A'].width = 20
-            ws_det.column_dimensions['B'].width = 50
-
-            linha = 1
-            ws_det[f"A{linha}"].value = "DETALHAMENTO DO ORÇAMENTO"
-            ws_det[f"A{linha}"].font = Font(size=14, bold=True, color=COR_PRIMARIA)
-            ws_det.merge_cells(f"A{linha}:B{linha}")
-            
-            linha += 2
-
-            detalhes = [
-                ["Número do Orçamento", dados_orc['numero']],
-                ["Data de Emissão", dados_orc['data']],
-                ["Cliente", dados_orc['cliente']['razao_social']],
-                ["CNPJ", dados_orc['cliente']['cnpj']],
-                ["Representante", dados_orc['representante']],
-                ["Quantidade de Itens", len(dados_orc['produtos'])],
-                ["Subtotal", f"R$ {subtotal:,.2f}"],
-                ["Impostos (ICMS+IPI+PIS+COFINS)", f"R$ {(total_icms + total_ipi + total_pis + total_cofins):,.2f}"],
-                ["Valor Total", f"R$ {total:,.2f}"]
-            ]
-
-            for detalhe in detalhes:
-                ws_det[f"A{linha}"].value = detalhe[0]
-                ws_det[f"A{linha}"].font = Font(bold=True, color=COR_TEXTO_ESCURO)
-                ws_det[f"A{linha}"].fill = PatternFill("solid", fgColor=COR_HEADER)
-                ws_det[f"A{linha}"].border = border_light
-                
-                ws_det[f"B{linha}"].value = detalhe[1]
-                ws_det[f"B{linha}"].border = border_light
-                
-                linha += 1
-
-            # Salvar
-            wb.save(caminho)
-            messagebox.showinfo("Sucesso", f"Orçamento exportado com sucesso!\n\n{caminho}")
-
-        except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao exportar orçamento:\n{str(e)}")
+        # Salvar arquivo
+        nome_arquivo = f"Orcamento_{numero_pedido}.xlsx"
+        wb.save(nome_arquivo)
+        os.startfile(nome_arquivo)
 
 
     
