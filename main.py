@@ -6,7 +6,7 @@ import unicodedata
 from decimal import Decimal
 import csv
 import openpyxl
-import openpyxl
+from datetime import datetime
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 from reportlab.lib.pagesizes import A4
@@ -211,56 +211,117 @@ class SistemaPedidos:
         self.tree_clientes.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
 
-        self.tree_clientes.bind("<Double-1>", self.editar_cliente)
+        self.tree_clientes.bind("<Double-1>", self.visualizar_cliente)
+
+
         
         self.carregar_clientes()
     def criar_aba_consulta_orcamentos(self):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Consultar Orçamentos")
 
-        search_frame = ttk.LabelFrame(frame, text="Buscar Orçamento", padding=10)
-        search_frame.pack(fill="x", padx=10, pady=10)
+        search_frame = ttk.LabelFrame(frame, text="Filtros de Busca", padding=10)
+        search_frame.pack(fill="x", padx=10, pady=10)  # mantém pack só para o frame em si
 
-        ttk.Label(search_frame, text="Número do Orçamento:").pack(side="left", padx=5)
-        self.entry_busca_orc = ttk.Entry(search_frame, width=20)
+        # Número
+        ttk.Label(search_frame, text="Número:").pack(side="left", padx=5)
+        self.entry_busca_orc = ttk.Entry(search_frame, width=15)
         self.entry_busca_orc.pack(side="left", padx=5)
+
+        # Cliente
+        ttk.Label(search_frame, text="Cliente:").pack(side="left", padx=5)
+        self.entry_busca_cliente = ttk.Entry(search_frame, width=25)
+        self.entry_busca_cliente.pack(side="left", padx=5)
+
+        # Representante
+        ttk.Label(search_frame, text="Representante:").pack(side="left", padx=5)
+        self.entry_busca_repr = ttk.Entry(search_frame, width=20)
+        self.entry_busca_repr.pack(side="left", padx=5)
+
+        # Status
+        ttk.Label(search_frame, text="Status:").pack(side="left", padx=5)
+        self.combo_status = ttk.Combobox(search_frame, values=["", "Em Aberto", "Aprovado", "Cancelado"], width=15)
+        self.combo_status.pack(side="left", padx=5)
+
+        # Datas
+        ttk.Label(search_frame, text="Data Inicial (dd/mm/aaaa):").pack(side="left", padx=5)
+        self.entry_data_ini = ttk.Entry(search_frame, width=12)
+        self.entry_data_ini.pack(side="left", padx=5)
+
+        ttk.Label(search_frame, text="Data Final (dd/mm/aaaa):").pack(side="left", padx=5)
+        self.entry_data_fim = ttk.Entry(search_frame, width=12)
+        self.entry_data_fim.pack(side="left", padx=5)
+
+        # Botão buscar
         ttk.Button(search_frame, text="Buscar", command=self.buscar_orcamento).pack(side="left", padx=5)
 
-        # Treeview para mostrar resultados
+        # Treeview de resultados
         list_frame = ttk.LabelFrame(frame, text="Resultados", padding=10)
         list_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        cols = ("Número", "Data", "Cliente", "Total", "Representante")
-        self.tree_orcamentos = ttk.Treeview(list_frame, columns=cols, show="headings", height=10)
+        cols = ("Número", "Data", "Cliente", "Total", "Representante", "Status")
+        self.tree_orcamentos = ttk.Treeview(list_frame, columns=cols, show="headings", height=12)
         for col in cols:
             self.tree_orcamentos.heading(col, text=col)
-            self.tree_orcamentos.column(col, width=150)
+            self.tree_orcamentos.column(col, width=140)
         self.tree_orcamentos.pack(fill="both", expand=True)
+
+        self.tree_orcamentos.bind("<Double-1>", self.visualizar_orcamento)
+
+        # 👉 já carrega todos os orçamentos ao abrir a aba
+        self.buscar_orcamento()
 
     def buscar_orcamento(self):
         numero = self.entry_busca_orc.get().strip()
+        cliente = self.entry_busca_cliente.get().strip()
+        representante = self.entry_busca_repr.get().strip()
+        status = self.combo_status.get().strip()
+        data_ini = self.entry_data_ini.get().strip()
+        data_fim = self.entry_data_fim.get().strip()
 
         # Limpa resultados anteriores
         for item in self.tree_orcamentos.get_children():
             self.tree_orcamentos.delete(item)
 
-        if numero:  
-            # Busca parcial se o usuário digitou algo
-            self.cursor.execute('''
-                SELECT p.numero_pedido, p.data_pedido, c.razao_social, p.valor_total, p.representante
-                FROM pedidos p
-                JOIN clientes c ON p.cliente_id = c.id
-                WHERE p.numero_pedido LIKE ?
-            ''', (f"%{numero}%",))
-        else:
-            # Se não digitou nada → traz todos
-            self.cursor.execute('''
-                SELECT p.numero_pedido, p.data_pedido, c.razao_social, p.valor_total, p.representante
-                FROM pedidos p
-                JOIN clientes c ON p.cliente_id = c.id
-                ORDER BY p.id DESC
-            ''')
+        # Monta query dinâmica
+        query = '''
+            SELECT p.numero_pedido, p.data_pedido, c.razao_social, p.valor_total, p.representante, p.status
+            FROM pedidos p
+            JOIN clientes c ON p.cliente_id = c.id
+            WHERE 1=1
+        '''
+        params = []
 
+        if numero:
+            query += " AND p.numero_pedido LIKE ?"
+            params.append(f"%{numero}%")
+        if cliente:
+            query += " AND c.razao_social LIKE ?"
+            params.append(f"%{cliente}%")
+        if representante:
+            query += " AND p.representante LIKE ?"
+            params.append(f"%{representante}%")
+        if status:
+            query += " AND p.status = ?"
+            params.append(status)
+        if data_ini:
+            try:
+                dt_ini = datetime.strptime(data_ini, "%d/%m/%Y").strftime("%Y-%m-%d 00:00:00")
+                query += " AND p.data_pedido >= ?"
+                params.append(dt_ini)
+            except:
+                messagebox.showwarning("Atenção", "Data inicial inválida! Use dd/mm/aaaa.")
+        if data_fim:
+            try:
+                dt_fim = datetime.strptime(data_fim, "%d/%m/%Y").strftime("%Y-%m-%d 23:59:59")
+                query += " AND p.data_pedido <= ?"
+                params.append(dt_fim)
+            except:
+                messagebox.showwarning("Atenção", "Data final inválida! Use dd/mm/aaaa.")
+
+        query += " ORDER BY p.id DESC"
+
+        self.cursor.execute(query, tuple(params))
         rows = self.cursor.fetchall()
 
         if not rows:
@@ -269,13 +330,11 @@ class SistemaPedidos:
 
         for row in rows:
             valores = list(row)
-            valores[3] = formatar_moeda(valores[3])  # coluna "Total"
+            valores[3] = formatar_moeda(valores[3])  # formatar total
             self.tree_orcamentos.insert("", "end", values=valores)
 
 
 
-
-    
 
     def salvar_cliente(self):
             try:
@@ -603,24 +662,159 @@ class SistemaPedidos:
         self.label_subtotal.config(text=f"Subtotal: {formatar_moeda(subtotal)}")
         self.label_impostos.config(text=f"Impostos: {formatar_moeda(total_impostos)}")
         self.label_total.config(text=f"TOTAL: {formatar_moeda(total)}")
-
-
-
+    
+    def visualizar_cliente(self, event):
+        item = self.tree_clientes.selection()
+        if not item:
+            return
         
+        valores = self.tree_clientes.item(item[0], "values")
+        cliente_id = valores[0]  # primeira coluna do Treeview é o ID
+
+        # Buscar dados completos no banco
+        self.cursor.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,))
+        cliente = self.cursor.fetchone()
+
+        if not cliente:
+            messagebox.showerror("Erro", "Cliente não encontrado.")
+            return
+
+        # Campos da tabela clientes
+        keys = ["ID", "Razão Social", "CNPJ", "IE", "Endereço", "Cidade", "Estado", "CEP", "Telefone", "Email"]
+
+        # Criar nova janela
+        top = tk.Toplevel(self.root)
+        top.title(f"Cliente - {cliente[1]}")
+        top.geometry("600x400")
+
+        frame_info = ttk.LabelFrame(top, text="Dados do Cliente", padding=10)
+        frame_info.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Mostrar cada campo em label
+        for i, (k, v) in enumerate(zip(keys, cliente)):
+            tk.Label(frame_info, text=f"{k}:", font=("Arial", 10, "bold")).grid(row=i, column=0, sticky="w", padx=5, pady=2)
+            tk.Label(frame_info, text=v if v else "Não informado").grid(row=i, column=1, sticky="w", padx=5, pady=2)
+
+        # Botões de ação
+        frame_botoes = ttk.Frame(top)
+        frame_botoes.pack(pady=10)
+
+        def acao_editar():
+            """Chama o método editar_cliente para preencher o formulário da aba."""
+            self.tree_clientes.selection_set(item)   # garante que o cliente está selecionado
+            self.editar_cliente(None)                # usa o método existente
+            top.destroy()                            # fecha a janelinha
+
+        ttk.Button(frame_botoes, text="Editar Cliente", command=acao_editar).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, text="Fechar", command=top.destroy).pack(side="left", padx=5)
+
 
     
+    
+    
+    def visualizar_orcamento(self, event):
+        item = self.tree_orcamentos.selection()
+        if not item:
+            return
+        
+        valores = self.tree_orcamentos.item(item[0], "values")
+        numero_pedido = valores[0]  # primeira coluna = Número do Orçamento
+        
+        # Nova janela
+        top = tk.Toplevel(self.root)
+        top.title(f"Orçamento {numero_pedido}")
+        top.geometry("850x600")
+
+        # Buscar dados principais do pedido
+        self.cursor.execute('''
+            SELECT p.data_pedido, c.razao_social, c.cnpj, c.endereco, c.cidade, c.estado,
+                p.valor_total, p.representante, p.condicoes_pagamento, p.observacoes, p.validade
+            FROM pedidos p
+            JOIN clientes c ON p.cliente_id = c.id
+            WHERE p.numero_pedido = ?
+        ''', (numero_pedido,))
+        pedido = self.cursor.fetchone()
+
+        if not pedido:
+            messagebox.showerror("Erro", "Orçamento não encontrado.")
+            top.destroy()
+            return
+
+        data, cliente, cnpj, endereco, cidade, estado, total, representante, cond_pag, obs, validade = pedido
+
+        # Cabeçalho
+        frame_info = ttk.LabelFrame(top, text="Dados do Orçamento", padding=10)
+        frame_info.pack(fill="x", padx=10, pady=10)
+        partes_endereco = []
+        if endereco:
+            partes_endereco.append(endereco)
+        if cidade:
+            partes_endereco.append(cidade)
+        if estado:
+            partes_endereco.append(estado)
+
+        texto_endereco = " - ".join(partes_endereco) if partes_endereco else "Não informado"
+        tk.Label(frame_info, text=f"Data: {data}").grid(row=0, column=0, sticky="w", padx=5)
+        tk.Label(frame_info, text=f"Cliente: {cliente}").grid(row=1, column=0, sticky="w", padx=5)
+        tk.Label(frame_info, text=f"CNPJ: {cnpj}").grid(row=1, column=1, sticky="w", padx=5)
+        tk.Label(frame_info, text=f"Endereço: {texto_endereco}").grid(row=2, column=0, columnspan=2, sticky="w", padx=5)
+        tk.Label(frame_info, text=f"Representante: {representante}").grid(row=3, column=0, sticky="w", padx=5)
+        tk.Label(frame_info, text=f"Condições de Pagamento: {cond_pag}").grid(row=4, column=0, sticky="w", padx=5)
+        tk.Label(frame_info, text=f"Validade: {validade} dias").grid(row=4, column=1, sticky="w", padx=5)
+        tk.Label(frame_info, text=f"Observações: {obs}").grid(row=5, column=0, columnspan=2, sticky="w", padx=5)
+        tk.Label(frame_info, text=f"TOTAL: {formatar_moeda(total)}", font=("Arial", 11, "bold")).grid(row=6, column=0, sticky="w", padx=5, pady=5)
+
+        # Itens do orçamento
+        frame_itens = ttk.LabelFrame(top, text="Itens do Orçamento", padding=10)
+        frame_itens.pack(fill="both", expand=True, padx=10, pady=10)
+
+        cols = ("Código", "Descrição", "Qtd", "Valor Unit.", "Total")
+        tree_itens = ttk.Treeview(frame_itens, columns=cols, show="headings", height=10)
+        for col in cols:
+            tree_itens.heading(col, text=col)
+            tree_itens.column(col, width=130)
+        tree_itens.pack(fill="both", expand=True)
+
+        # Carregar itens do pedido
+        self.cursor.execute('''
+            SELECT pr.codigo, pr.descricao, pi.qtd, pi.valor_unitario
+            FROM pedido_itens pi
+            JOIN produtos pr ON pi.produto_id = pr.id
+            WHERE pi.numero_pedido = ?
+        ''', (numero_pedido,))
+        itens = self.cursor.fetchall()
+
+        for cod, desc, qtd, valor_unit in itens:
+            tree_itens.insert("", "end", values=(
+                cod, desc, qtd, formatar_moeda(valor_unit), formatar_moeda(qtd * valor_unit)
+            ))
+
+        # Rodapé com botões
+        frame_botoes = ttk.Frame(top)
+        frame_botoes.pack(fill="x", pady=10)
+
+        ttk.Button(frame_botoes, text="Gerar PDF", 
+                command=lambda: self.gerar_pdf_orcamento(numero_pedido)).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, text="Exportar Excel", 
+                command=self.exportar_excel_orcamento).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, text="Fechar", 
+                command=top.destroy).pack(side="right", padx=5)
+
+            
+
+        
     def limpar_pedido(self):
         for item in self.tree_pedido_items.get_children():
             self.tree_pedido_items.delete(item)
-        self.itens_pedido_temp = []
-        self.atualizar_totais()
-        self.combo_cliente.set('')
-        self.combo_produto.set('')
-        self.entry_qtd.delete(0, tk.END)
-        # limpar header e cartão se desejar:
-        # self.entry_numero.delete(0, tk.END)
-        # self.entry_representante.delete(0, tk.END)
-        # for e in self.card_entries.values(): e.delete(0, tk.END)
+            self.itens_pedido_temp = []
+            self.atualizar_totais()
+            self.combo_cliente.set('')
+            self.combo_produto.set('')
+            self.entry_qtd.delete(0, tk.END)
+            # limpar header e cartão se desejar:
+            # self.entry_numero.delete(0, tk.END)
+            # self.entry_representante.delete(0, tk.END)
+            # for e in self.card_entries.values(): e.delete(0, tk.END)
     
     def finalizar_pedido(self):
         if not self.combo_cliente.get() or not self.itens_pedido_temp:
@@ -693,7 +887,7 @@ class SistemaPedidos:
                 estilos = [
                     ("GRID", (0, 0), (-1, -1), 0.5, COR_GRID),
                     ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),         
                     ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ]
                 if header:
@@ -772,12 +966,30 @@ class SistemaPedidos:
             elementos.append(num_orc)
             elementos.append(Spacer(1, 20))
 
+            partes_endereco = []
+            if endereco:
+                partes_endereco.append(endereco)
+            if cidade:
+                partes_endereco.append(cidade)
+            if estado:
+                partes_endereco.append(estado)
+            
+            
+            endereco_formatado = " - ".join(partes_endereco) if partes_endereco else "Não informado"    
+
+            
+            try:
+                data_formatada = datetime.strptime(pedido[0], "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%y %H:%M")
+            except:
+                data_formatada = pedido[0] 
+
+
             # Informações do cliente (tabela)
             info_cliente = [
-                ["Data:", data_pedido],
+                ["Data:", data_formatada],
                 ["Cliente:", razao_social],
                 ["CNPJ:", cnpj],
-                ["Endereço:", f"{endereco}, {cidade} - {estado}"],
+                ["Endereço:", endereco_formatado],
                 ["Representante:", representante],
                 ["Status:", status],
             ]
@@ -1069,7 +1281,7 @@ class SistemaPedidos:
             
             # Logo (se existir)
             try:
-                img = XLImage("logo.png")
+                img = XLImage("logo .png")
                 img.width, img.height = 120, 50
                 ws.add_image(img, "A1")
             except:
