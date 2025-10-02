@@ -97,19 +97,23 @@ class SistemaPedidos:
             )
         ''')
         # produtos
+        # produtos
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS produtos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo TEXT UNIQUE NOT NULL,
                 descricao TEXT NOT NULL,
-                voltagem TEXT,
                 valor_unitario REAL NOT NULL,
+                tipo TEXT,
+                origem_tributacao TEXT,
+                voltagem TEXT,
                 aliq_icms REAL DEFAULT 0,
                 aliq_ipi REAL DEFAULT 0,
                 aliq_pis REAL DEFAULT 0,
                 aliq_cofins REAL DEFAULT 0
             )
         ''')
+
         # pedidos
         # pedidos
         self.cursor.execute('''
@@ -414,7 +418,12 @@ class SistemaPedidos:
         form_frame = ttk.LabelFrame(frame, text="Cadastro de Produto", padding=10)
         form_frame.pack(fill='x', padx=10, pady=10)
         
-        labels = ['Código:', 'Descrição:', 'Voltagem:', 'Valor Unitário:', 'ICMS (%):', 'IPI (%):', 'PIS (%):', 'COFINS (%):']
+        labels = [
+                'Código:', 'Descrição:', 'Valor Unitário:',
+                'Tipo:', 'Origem Tributação:', 'Voltagem:',
+                'ICMS (%):', 'IPI (%):', 'PIS/COFINS (%):'
+            ]
+
         self.produto_entries = {}
         for i, label in enumerate(labels):
             ttk.Label(form_frame, text=label).grid(row=i//4, column=(i%4)*2, sticky='w', padx=5, pady=5)
@@ -432,15 +441,38 @@ class SistemaPedidos:
         
         list_frame = ttk.LabelFrame(frame, text="Produtos Cadastrados", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        cols = ('ID', 'Código', 'Descrição', 'Voltagem', 'Valor', 'ICMS%', 'IPI%')
+
+        # --- Filtro por Tipo ---
+        filtro_frame = ttk.Frame(frame)
+        filtro_frame.pack(fill='x', padx=10, pady=5)
+
+        ttk.Label(filtro_frame, text="Filtrar por Tipo:").pack(side='left', padx=5)
+
+        self.combo_filtro_tipo = ttk.Combobox(filtro_frame, width=25, state="readonly")
+        self.combo_filtro_tipo.pack(side='left', padx=5)
+
+        ttk.Button(filtro_frame, text="Aplicar", command=self.filtrar_produtos_tipo).pack(side='left', padx=5)
+        ttk.Button(filtro_frame, text="Limpar", command=lambda: self.carregar_produtos()).pack(side='left', padx=5)
+
+
+        # novas colunas
+        cols = ('ID', 'Código', 'Descrição', 'Tipo', 'Origem', 'Valor', 'ICMS%', 'IPI%', 'PIS/COFINS%')
         self.tree_produtos = ttk.Treeview(list_frame, columns=cols, show='headings', height=8)
+
         for col in cols:
             self.tree_produtos.heading(col, text=col)
-            self.tree_produtos.column(col, width=140)
+            if col in ('ID', 'ICMS%', 'IPI%', 'PIS/COFINS%'):
+                self.tree_produtos.column(col, width=80)
+            elif col == 'Valor':
+                self.tree_produtos.column(col, width=100)
+            else:
+                self.tree_produtos.column(col, width=160)
+
         scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.tree_produtos.yview)
         self.tree_produtos.configure(yscrollcommand=scrollbar.set)
         self.tree_produtos.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
+
         self.carregar_produtos()
     
     def salvar_produto(self):
@@ -478,9 +510,51 @@ class SistemaPedidos:
     def carregar_produtos(self):
         for item in self.tree_produtos.get_children():
             self.tree_produtos.delete(item)
-        self.cursor.execute('SELECT id, codigo, descricao, voltagem, valor_unitario, aliq_icms, aliq_ipi FROM produtos')
+
+        self.cursor.execute("SELECT DISTINCT tipo FROM produtos WHERE tipo IS NOT NULL AND tipo <> ''")
+        tipos = [row[0] for row in self.cursor.fetchall()]
+        self.combo_filtro_tipo['values'] = [""] + tipos  # vazio = mostrar todos
+        
+        # Agora trazemos todas as colunas que o Treeview espera
+        self.cursor.execute('''
+            SELECT id, codigo, descricao, tipo, origem_tributacao,
+                valor_unitario, aliq_icms, aliq_ipi, aliq_pis
+            FROM produtos
+        ''')
+        # Atualizar combobox com os tipos disponíveis
+        
+
         for row in self.cursor.fetchall():
+            # formatar valor unitário como moeda
+            row = list(row)
+            row[5] = formatar_moeda(row[5])  # valor_unitario
             self.tree_produtos.insert('', 'end', values=row)
+
+    
+    
+    def filtrar_produtos_tipo(self):
+        tipo = self.combo_filtro_tipo.get().strip()
+
+        for item in self.tree_produtos.get_children():
+            self.tree_produtos.delete(item)
+
+        if not tipo:  # se não selecionar nada, mostra todos
+            self.carregar_produtos()
+            return
+
+        self.cursor.execute('''
+            SELECT id, codigo, descricao, tipo, origem_tributacao,
+                valor_unitario, aliq_icms, aliq_ipi, aliq_pis
+            FROM produtos
+            WHERE tipo = ?
+        ''', (tipo,))
+        
+        for row in self.cursor.fetchall():
+            row = list(row)
+            row[5] = formatar_moeda(row[5])  # formatar valor unitário
+            self.tree_produtos.insert('', 'end', values=row)
+
+    
     def editar_produto(self, event):
         item = self.tree_produtos.selection()
         if not item:
@@ -1144,14 +1218,15 @@ class SistemaPedidos:
 
                     # ---------- importar produtos ----------
                     if tipo == "produtos":
-                        idx_codigo = find_index('codigo', 'cod', 'produto_id', 'id')
-                        idx_desc   = find_index('descricao', 'descri', 'desc', 'produto', 'nome')
-                        idx_volt   = find_index('voltagem', 'voltage', 'voltag')
-                        idx_valor  = find_index('valor_unitario', 'valor unitario', 'valor', 'preco', 'price', 'unitario')
-                        idx_icms   = find_index('icms')
+                        idx_codigo = find_index('cod', 'codigo', 'produto_id', 'id')
+                        idx_desc   = find_index('descricao', 'descri', 'produto', 'nome')
+                        idx_valor  = find_index('valor', 'preco', 'unitario')
+                        idx_tipo   = find_index('tipo')
+                        idx_origem = find_index('origem', 'tributacao')
                         idx_ipi    = find_index('ipi')
-                        idx_pis    = find_index('pis')
-                        idx_cofins = find_index('cofins', 'cofins%')
+                        idx_pis    = find_index('pis', 'pis/cofins', 'cofins')
+                        idx_icms   = find_index('icms')
+
 
                         if idx_codigo is None or idx_desc is None or idx_valor is None:
                             messagebox.showerror("Erro de Coluna", "Arquivo de produtos precisa conter ao menos 'codigo', 'descricao' e 'preco/valor'.")
@@ -1170,23 +1245,29 @@ class SistemaPedidos:
                         importados = 0
                         for row in data_rows:
                             try:
-                                codigo = str(row[idx_codigo]).strip() if idx_codigo < len(row) and row[idx_codigo] is not None else ''
-                                descricao = str(row[idx_desc]).strip() if idx_desc < len(row) and row[idx_desc] is not None else ''
-                                voltagem = str(row[idx_volt]).strip() if idx_volt is not None and idx_volt < len(row) and row[idx_volt] is not None else ''
+                                codigo = str(row[idx_codigo]).strip() if idx_codigo is not None and row[idx_codigo] else ''
+                                descricao = str(row[idx_desc]).strip() if idx_desc is not None and row[idx_desc] else ''
                                 valor_unitario = to_float_cell(row, idx_valor)
+
+                                tipo = str(row[idx_tipo]).strip() if idx_tipo is not None and row[idx_tipo] else ''
+                                origem = str(row[idx_origem]).strip() if idx_origem is not None and row[idx_origem] else ''
+
                                 aliq_icms = to_float_cell(row, idx_icms)
                                 aliq_ipi  = to_float_cell(row, idx_ipi)
                                 aliq_pis  = to_float_cell(row, idx_pis)
-                                aliq_cofins = to_float_cell(row, idx_cofins)
+                                aliq_cofins = 0.0  # opcional (se quiser separar do PIS/COFINS)
 
                                 if not codigo or not descricao:
                                     continue
 
                                 self.cursor.execute('''
-                                    INSERT INTO produtos (codigo, descricao, voltagem, valor_unitario, aliq_icms, aliq_ipi, aliq_pis, aliq_cofins)
-                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                                ''', (codigo, descricao, voltagem, valor_unitario, aliq_icms, aliq_ipi, aliq_pis, aliq_cofins))
+                                    INSERT INTO produtos (codigo, descricao, valor_unitario, tipo, origem_tributacao,
+                                                        aliq_icms, aliq_ipi, aliq_pis, aliq_cofins)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                ''', (codigo, descricao, valor_unitario, tipo, origem,
+                                    aliq_icms, aliq_ipi, aliq_pis, aliq_cofins))
                                 importados += 1
+
                             except sqlite3.IntegrityError:
                                 # ignora duplicados
                                 continue
