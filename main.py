@@ -22,13 +22,6 @@ import os
 
 
 def formatar_moeda(valor):
-    """
-    Formata número/int/str/None para padrão brasileiro: R$ 1.234,56
-    Aceita:
-      - None -> R$ 0,00
-      - '1.234,56' ou '1234.56' ou 'R$ 1.234,56'
-      - int/float
-    """
     try:
         if valor is None:
             v = 0.0
@@ -51,9 +44,6 @@ def formatar_moeda(valor):
     texto = f"{v:,.2f}"            # ex: "1234.56" -> "1,234.56"
     texto = texto.replace(",", "V").replace(".", ",").replace("V", ".")  # -> "1.234,56"
     return f"R$ {texto}"
-
-
-
 
 def normalizar_chave(texto):
     texto = ''.join(c for c in unicodedata.normalize('NFD', texto)
@@ -176,11 +166,6 @@ class SistemaPedidos:
             total_cofins += base * (cofins or 0) / 100
         total = subtotal + total_icms + total_ipi + total_pis + total_cofins
         return subtotal, total_icms, total_ipi, total_pis, total_cofins, total
-
-    # ------------------- Clientes -------------------
-    
-    
-        # ------------------- Clientes -------------------
 
     def criar_aba_clientes(self):
         frame = ttk.Frame(self.notebook)
@@ -309,6 +294,8 @@ class SistemaPedidos:
         search_frame = ttk.LabelFrame(frame, text="Filtros de Busca", padding=10)
         search_frame.pack(fill="x", padx=10, pady=10)  # mantém pack só para o frame em si
 
+
+
         # Número
         ttk.Label(search_frame, text="Número:").pack(side="left", padx=5)
         self.entry_busca_orc = ttk.Entry(search_frame, width=15)
@@ -326,7 +313,7 @@ class SistemaPedidos:
 
         # Status
         ttk.Label(search_frame, text="Status:").pack(side="left", padx=5)
-        self.combo_status = ttk.Combobox(search_frame, values=["", "Em Aberto", "Aprovado", "Cancelado"], width=15)
+        self.combo_status = ttk.Combobox(search_frame, values=["", "Em Aberto", "Aprovado", "Cancelado", "Rejeitado"], width=15)
         self.combo_status.pack(side="left", padx=5)
 
         # Datas
@@ -337,6 +324,10 @@ class SistemaPedidos:
         ttk.Label(search_frame, text="Data Final (dd/mm/aaaa):").pack(side="left", padx=5)
         self.entry_data_fim = ttk.Entry(search_frame, width=12)
         self.entry_data_fim.pack(side="left", padx=5)
+
+                # Configuração de cores por status
+        
+
 
         # Botão buscar
         ttk.Button(search_frame, text="Buscar", command=self.buscar_orcamento).pack(side="left", padx=5)
@@ -352,9 +343,14 @@ class SistemaPedidos:
             self.tree_orcamentos.column(col, width=140)
         self.tree_orcamentos.pack(fill="both", expand=True)
 
+        self.tree_orcamentos.tag_configure("Em Aberto", background="#bfdbfe")   # azul claro
+        self.tree_orcamentos.tag_configure("Aprovado", background="#bbf7d0")    # verde claro
+        self.tree_orcamentos.tag_configure("Rejeitado", background="#fecaca")   # vermelho claro
+        self.tree_orcamentos.tag_configure("Cancelado", background="#fed7aa")   # laranja claro
+
         self.tree_orcamentos.bind("<Double-1>", self.visualizar_orcamento)
 
-        # 👉 já carrega todos os orçamentos ao abrir a aba
+      
         self.buscar_orcamento()
 
     def buscar_orcamento(self):
@@ -417,7 +413,8 @@ class SistemaPedidos:
         for row in rows:
             valores = list(row)
             valores[3] = formatar_moeda(valores[3])  # formatar total
-            self.tree_orcamentos.insert("", "end", values=valores)
+            status = valores[5]  # coluna de Status
+            self.tree_orcamentos.insert("", "end", values=valores, tags=(status,))
 
 
 
@@ -495,49 +492,36 @@ class SistemaPedidos:
     def criar_aba_produtos(self):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Produtos")
-        form_frame = ttk.LabelFrame(frame, text="Cadastro de Produto", padding=10)
-        form_frame.pack(fill='x', padx=10, pady=10)
-        
-        labels = [
-                'Código:', 'Descrição:', 'Valor Unitário:',
-                'Tipo:', 'Origem Tributação:', 'Voltagem:',
-                'ICMS (%):', 'IPI (%):', 'PIS/COFINS (%):'
-            ]
 
-        self.produto_entries = {}
-        for i, label in enumerate(labels):
-            ttk.Label(form_frame, text=label).grid(row=i//4, column=(i%4)*2, sticky='w', padx=5, pady=5)
-            entry = ttk.Entry(form_frame, width=20)
-            entry.grid(row=i//4, column=(i%4)*2+1, padx=5, pady=5)
-            chave = normalizar_chave(label)  # ex: codigo, descricao, valor_unitario, icms, ...
-            self.produto_entries[chave] = entry
-        
-        btn_frame = ttk.Frame(form_frame)
-        btn_frame.grid(row=2, column=0, columnspan=8, pady=10)
-        ttk.Button(btn_frame, text="Cadastrar Produto", command=self.salvar_produto).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Novo Produto", command=self.limpar_produto).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Importar Arquivo", command=lambda: self.importar_dados("produtos")).pack(side='left', padx=5)
-            
-        
-        list_frame = ttk.LabelFrame(frame, text="Produtos Cadastrados", padding=10)
-        list_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        # --- Barra de botões ---
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill='x', padx=10, pady=5)
+
+        ttk.Button(btn_frame, text="Adicionar", bootstyle=SUCCESS,
+                command=lambda: self.abrir_formulario_produto()).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Editar", bootstyle=INFO,
+                command=self.editar_produto).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Excluir", bootstyle=DANGER,
+                command=self.excluir_produto).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Importar Arquivo", bootstyle=WARNING,
+                command=lambda: self.importar_dados("produtos")).pack(side='left', padx=5)
 
         # --- Filtro por Tipo ---
         filtro_frame = ttk.Frame(frame)
         filtro_frame.pack(fill='x', padx=10, pady=5)
 
         ttk.Label(filtro_frame, text="Filtrar por Tipo:").pack(side='left', padx=5)
-
         self.combo_filtro_tipo = ttk.Combobox(filtro_frame, width=25, state="readonly")
         self.combo_filtro_tipo.pack(side='left', padx=5)
-
         ttk.Button(filtro_frame, text="Aplicar", command=self.filtrar_produtos_tipo).pack(side='left', padx=5)
         ttk.Button(filtro_frame, text="Limpar", command=lambda: self.carregar_produtos()).pack(side='left', padx=5)
 
+        # --- Lista de produtos ---
+        list_frame = ttk.LabelFrame(frame, text="Produtos Cadastrados", padding=10)
+        list_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
-        # novas colunas
         cols = ('ID', 'Código', 'Descrição', 'Tipo', 'Origem', 'Valor', 'ICMS%', 'IPI%', 'PIS/COFINS%')
-        self.tree_produtos = ttk.Treeview(list_frame, columns=cols, show='headings', height=8)
+        self.tree_produtos = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
 
         for col in cols:
             self.tree_produtos.heading(col, text=col)
@@ -554,6 +538,7 @@ class SistemaPedidos:
         scrollbar.pack(side='right', fill='y')
 
         self.carregar_produtos()
+
     
     def salvar_produto(self):
         try:
@@ -635,23 +620,34 @@ class SistemaPedidos:
             self.tree_produtos.insert('', 'end', values=row)
 
     
-    def editar_produto(self, event):
+    def editar_produto(self, event=None):
         item = self.tree_produtos.selection()
         if not item:
+            messagebox.showwarning("Atenção", "Selecione um produto para editar.")
             return
         valores = self.tree_produtos.item(item[0], "values")
         produto_id = valores[0]
         self.cursor.execute("SELECT * FROM produtos WHERE id=?", (produto_id,))
         produto = self.cursor.fetchone()
         if produto:
-            keys = ['id','codigo','descricao','voltagem','valor_unitario','aliq_icms','aliq_ipi','aliq_pis','aliq_cofins']
-            for k, v in zip(keys, produto):
-                if k in self.produto_entries:
-                    self.produto_entries[k].delete(0, tk.END)
-                    self.produto_entries[k].insert(0, v or "")
-            self.produto_edicao_id = produto_id
-            self.btn_salvar_produto.config(text="Atualizar Produto")
-        
+            self.abrir_formulario_produto(produto)
+    def excluir_produto(self):
+        item = self.tree_produtos.selection()
+        if not item:
+            messagebox.showwarning("Atenção", "Selecione um produto para excluir.")
+            return
+        valores = self.tree_produtos.item(item[0], "values")
+        produto_id = valores[0]
+        if messagebox.askyesno("Confirmação", "Deseja realmente excluir este produto?"):
+            try:
+                self.cursor.execute("DELETE FROM produtos WHERE id=?", (produto_id,))
+                self.conn.commit()
+                self.carregar_produtos()
+                messagebox.showinfo("Sucesso", "Produto excluído com sucesso!")
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao excluir produto: {e}")   
+
+
     # ------------------- Pedidos/Orçamentos -------------------
 
 
@@ -668,24 +664,26 @@ class SistemaPedidos:
         self.entry_data_orc.grid(row=0, column=1, padx=5)
         self.entry_data_orc.insert(0, datetime.now().strftime('%d/%m/%Y'))
 
-        tb.Label(header_frame, text="Nº do Orçamento:", bootstyle="inverse-primary").grid(row=0, column=2, sticky=W, padx=5)
-        self.label_numero_orc = tb.Label(header_frame, text="Será gerado ao salvar", bootstyle="secondary")
-        self.label_numero_orc.grid(row=0, column=3, padx=5)
+        # campo do número do orçamento (só aparece em edição)
+        self.label_numero_orc_lbl = tb.Label(header_frame, text="Nº do Orçamento:", bootstyle="inverse-primary")
+        self.label_numero_orc = tb.Label(header_frame, text="", bootstyle="secondary")
+
 
         tb.Label(header_frame, text="Representante:", bootstyle="inverse-primary").grid(row=0, column=4, sticky=W, padx=5)
         self.entry_representante = tb.Entry(header_frame, width=25)
         self.entry_representante.grid(row=0, column=5, padx=5)
 
         # 👉 Campo de Status
-        tb.Label(header_frame, text="Status:", bootstyle="inverse-primary").grid(row=0, column=6, sticky=W, padx=5)
+        # criar mas não mostrar ainda
+        self.label_status_orc = tb.Label(header_frame, text="Status:", bootstyle="inverse-primary")
         self.combo_status_orc = tb.Combobox(
             header_frame,
             values=["Em Aberto", "Aprovado", "Cancelado", "Rejeitado"],
             width=15,
             state="readonly"
         )
-        self.combo_status_orc.set("Em Aberto")  # padrão ao criar novo orçamento
-        self.combo_status_orc.grid(row=0, column=7, padx=5)
+
+        
 
         # Informações Comerciais
         extra_frame = tb.Labelframe(frame, text="Informações Comerciais", padding=6, bootstyle="info")
@@ -735,7 +733,7 @@ class SistemaPedidos:
         for col in cols:
             self.tree_pedido_items.heading(col, text=col)
             self.tree_pedido_items.column(col, width=180)
-        self.tree_pedido_items.pack(fill='both', expand=True)
+            self.tree_pedido_items.pack(fill='both', expand=True)
 
         # Totais + ações
         totals_frame = tb.Labelframe(frame, text="Totais & Ações", padding=6, bootstyle="warning")
@@ -812,9 +810,16 @@ class SistemaPedidos:
         self.text_obs.delete("1.0", tk.END)
         self.text_obs.insert("1.0", observacoes or "")
 
-        # 👉 preencher o ComboBox de status
-        if hasattr(self, "combo_status_orc"):
-            self.combo_status_orc.set(status or "Em Aberto")
+       
+        
+        self.label_status_orc.grid(row=0, column=6, sticky=W, padx=5)
+        self.combo_status_orc.grid(row=0, column=7, padx=5)
+        self.combo_status_orc.set(status or "Em Aberto")
+        # 👉 mostrar número do orçamento quando editar
+        self.label_numero_orc_lbl.grid(row=0, column=2, sticky=W, padx=5)
+        self.label_numero_orc.grid(row=0, column=3, padx=5)
+        self.label_numero_orc.config(text=numero_pedido)
+
 
         # selecionar cliente no combo (formato: "id - nome")
         self.cursor.execute("SELECT razao_social FROM clientes WHERE id=?", (cliente_id,))
@@ -864,11 +869,7 @@ class SistemaPedidos:
                 self.notebook.select(i)
                 break
 
-
     def remover_item(self):
-        """
-        Remove o item selecionado do Treeview e da lista temporária de itens.
-        """
         selecionado = self.tree_pedido_items.selection()
         if not selecionado:
             messagebox.showwarning("Atenção", "Selecione um item para remover.")
@@ -877,16 +878,14 @@ class SistemaPedidos:
         for item_id in selecionado:
             valores = self.tree_pedido_items.item(item_id, "values")
             if valores:
-                descricao = valores[0]  # vem no formato "codigo - descrição"
-                # remover da lista temporária
+                descricao = valores[0]  
                 for i, item in enumerate(self.itens_pedido_temp):
                     if f"{item['codigo']} - {item['descricao']}" == descricao:
                         del self.itens_pedido_temp[i]
                         break
-            # remover do treeview
+           
             self.tree_pedido_items.delete(item_id)
 
-        # atualizar totais depois da remoção
         self.atualizar_totais() 
 
     def carregar_combos_pedido(self):
@@ -897,7 +896,6 @@ class SistemaPedidos:
         produtos = [f"{row[0]} - {row[1]} - {row[2]}" for row in self.cursor.fetchall()]
         self.combo_produto['values'] = produtos
     def filtrar_clientes(self, event=None):
-        """Filtra clientes conforme o usuário digita no combobox do orçamento."""
         texto = self.combo_cliente.get().lower()
         self.cursor.execute('SELECT id, razao_social FROM clientes')
         todos = [f"{row[0]} - {row[1]}" for row in self.cursor.fetchall()]
@@ -908,7 +906,6 @@ class SistemaPedidos:
             filtrados = todos
 
         self.combo_cliente['values'] = filtrados
-        # mantém o texto digitado
         self.combo_cliente.event_generate('<Down>')  # abre a lista automaticamente
 
     def adicionar_item_pedido(self):
@@ -921,7 +918,7 @@ class SistemaPedidos:
             produto_id = int(produto_str.split(" - ")[0])
             qtd = float(self.entry_qtd.get() or 1)
 
-            self.cursor.execute("SELECT codigo, descricao, valor_unitario            FROM produtos WHERE id = ?", (produto_id,))
+            self.cursor.execute("SELECT codigo, descricao, valor_unitario FROM produtos WHERE id = ?", (produto_id,))
             produto = self.cursor.fetchone()
             if not produto:
                 messagebox.showerror("Erro", "Produto não encontrado.")
@@ -1001,9 +998,7 @@ class SistemaPedidos:
             return
         
         valores = self.tree_clientes.item(item[0], "values")
-        cliente_id = valores[0]  # primeira coluna do Treeview é o ID
-
-        # Buscar dados completos no banco
+        cliente_id = valores[0]  
         self.cursor.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,))
         cliente = self.cursor.fetchone()
 
@@ -1011,10 +1006,8 @@ class SistemaPedidos:
             messagebox.showerror("Erro", "Cliente não encontrado.")
             return
 
-        # Campos da tabela clientes
         keys = ["ID", "Razão Social", "CNPJ", "IE", "Endereço", "Cidade", "Estado", "CEP", "Telefone", "Email"]
 
-        # Criar nova janela
         top = tk.Toplevel(self.root)
         top.title(f"Cliente - {cliente[1]}")
         top.geometry("600x400")
@@ -1039,10 +1032,6 @@ class SistemaPedidos:
 
         ttk.Button(frame_botoes, text="Editar Cliente", command=acao_editar).pack(side="left", padx=5)
         ttk.Button(frame_botoes, text="Fechar", command=top.destroy).pack(side="left", padx=5)
-
-
-    
-    
     
     def visualizar_orcamento(self, event):
         item = self.tree_orcamentos.selection()
@@ -1130,9 +1119,6 @@ class SistemaPedidos:
         ttk.Button(frame_botoes, bootstyle=INFO, text="Abrir Orçamento", 
                 command=lambda: (top.destroy(), self.carregar_orcamento_para_edicao(numero_pedido))).pack(side="left", padx=5)
         ttk.Button(frame_botoes, text="Fechar", command=top.destroy).pack(side="right", padx=5)
-
-            
-
         
     def limpar_pedido(self):
         for item in self.tree_pedido_items.get_children():
@@ -1142,10 +1128,20 @@ class SistemaPedidos:
             self.combo_cliente.set('')
             self.combo_produto.set('')
             self.entry_qtd.delete(0, tk.END)
-            # limpar header e cartão se desejar:
-            # self.entry_numero.delete(0, tk.END)
-            # self.entry_representante.delete(0, tk.END)
-            # for e in self.card_entries.values(): e.delete(0, tk.END)
+        # esconder campo de status quando for novo orçamento
+        try:
+            self.label_status_orc.grid_forget()
+            self.combo_status_orc.grid_forget()
+        except:
+            pass
+
+        # esconder número do orçamento quando for novo
+        try:
+            self.label_numero_orc_lbl.grid_forget()
+            self.label_numero_orc.grid_forget()
+        except:
+            pass
+
     
     def finalizar_pedido(self):
         if not self.combo_cliente.get() or not self.itens_pedido_temp:
@@ -1236,7 +1232,73 @@ class SistemaPedidos:
             messagebox.showerror("Erro", f"Falha ao salvar/atualizar orçamento: {e}")
 
 
-    
+
+
+
+    def abrir_formulario_produto(self, produto=None):
+        top = tk.Toplevel(self.root)
+        top.title("Cadastro de Produto")
+        top.geometry("700x400")
+
+        labels = [
+            'Código:', 'Descrição:', 'Valor Unitário:',
+            'Tipo:', 'Origem Tributação:', 'Voltagem:',
+            'ICMS (%):', 'IPI (%):', 'PIS (%):', 'COFINS (%):'
+        ]
+
+        entries = {}
+        for i, label in enumerate(labels):
+            ttk.Label(top, text=label).grid(row=i//2, column=(i%2)*2, sticky='w', padx=5, pady=5)
+            entry = ttk.Entry(top, width=28)
+            entry.grid(row=i//2, column=(i%2)*2+1, padx=5, pady=5)
+            chave = normalizar_chave(label)
+            entries[chave] = entry
+
+        # se for edição, preencher
+        if produto:
+            keys = ['id','codigo','descricao','valor_unitario','tipo','origem_tributacao','voltagem',
+                    'aliq_icms','aliq_ipi','aliq_pis','aliq_cofins']
+            for k, v in zip(keys, produto):
+                if k in entries:
+                    entries[k].insert(0, v or "")
+
+        def salvar():
+            dados = {k: v.get() for k,v in entries.items()}
+            if not dados['codigo'] or not dados['descricao'] or not dados['valor_unitario']:
+                messagebox.showwarning("Atenção", "Código, Descrição e Valor Unitário são obrigatórios!")
+                return
+            try:
+                if produto:  # atualização
+                    self.cursor.execute('''
+                        UPDATE produtos
+                        SET codigo=?, descricao=?, valor_unitario=?, tipo=?, origem_tributacao=?, voltagem=?,
+                            aliq_icms=?, aliq_ipi=?, aliq_pis=?, aliq_cofins=?
+                        WHERE id=?
+                    ''', (dados['codigo'], dados['descricao'], float(dados['valor_unitario'] or 0),
+                        dados.get('tipo'), dados.get('origem_tributacao'), dados.get('voltagem'),
+                        float(dados.get('icms') or 0), float(dados.get('ipi') or 0),
+                        float(dados.get('pis') or 0), float(dados.get('cofins') or 0),
+                        produto[0]))
+                else:  # novo
+                    self.cursor.execute('''
+                        INSERT INTO produtos (codigo, descricao, valor_unitario, tipo, origem_tributacao, voltagem,
+                                            aliq_icms, aliq_ipi, aliq_pis, aliq_cofins)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (dados['codigo'], dados['descricao'], float(dados['valor_unitario'] or 0),
+                        dados.get('tipo'), dados.get('origem_tributacao'), dados.get('voltagem'),
+                        float(dados.get('icms') or 0), float(dados.get('ipi') or 0),
+                        float(dados.get('pis') or 0), float(dados.get('cofins') or 0)))
+                self.conn.commit()
+                self.carregar_produtos()
+                top.destroy()
+            except sqlite3.IntegrityError:
+                messagebox.showerror("Erro", "Código já cadastrado!")   
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao salvar produto: {e}")
+
+        ttk.Button(top, text="Salvar", command=salvar).grid(row=6, column=0, columnspan=2, pady=10)
+
+
     # ------------------- Export PDF -------------------
     def gerar_pdf_orcamento(self, numero_pedido=None):
         try:
@@ -1639,10 +1701,9 @@ class SistemaPedidos:
                     messagebox.showerror("Tipo inválido", f"Tipo de importação '{tipo}' não suportado.")
                     return
 
-                except Exception as e:
+                except Exception as e:  
                     messagebox.showerror("Erro", f"Falha ao importar: {e}")
-    
-    
+           
     def exportar_excel_orcamento(self, numero_pedido=None):
         if not numero_pedido:
             item = self.tree_orcamentos.selection()
@@ -1828,8 +1889,6 @@ class SistemaPedidos:
         os.startfile(nome_arquivo)
 
 
-
-    
     def __del__(self):
             if hasattr(self, 'conn'):
                 self.conn.close()
