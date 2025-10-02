@@ -676,6 +676,17 @@ class SistemaPedidos:
         self.entry_representante = tb.Entry(header_frame, width=25)
         self.entry_representante.grid(row=0, column=5, padx=5)
 
+        # 👉 Campo de Status
+        tb.Label(header_frame, text="Status:", bootstyle="inverse-primary").grid(row=0, column=6, sticky=W, padx=5)
+        self.combo_status_orc = tb.Combobox(
+            header_frame,
+            values=["Em Aberto", "Aprovado", "Cancelado", "Rejeitado"],
+            width=15,
+            state="readonly"
+        )
+        self.combo_status_orc.set("Em Aberto")  # padrão ao criar novo orçamento
+        self.combo_status_orc.grid(row=0, column=7, padx=5)
+
         # Informações Comerciais
         extra_frame = tb.Labelframe(frame, text="Informações Comerciais", padding=6, bootstyle="info")
         extra_frame.pack(fill='x', padx=10, pady=6)
@@ -727,7 +738,6 @@ class SistemaPedidos:
         self.tree_pedido_items.pack(fill='both', expand=True)
 
         # Totais + ações
-        # Totais + ações
         totals_frame = tb.Labelframe(frame, text="Totais & Ações", padding=6, bootstyle="warning")
         totals_frame.pack(fill='x', padx=10, pady=6)
 
@@ -752,25 +762,25 @@ class SistemaPedidos:
             command=self.limpar_pedido, bootstyle="secondary"
         ).grid(row=0, column=4, padx=8)
 
-        
         tb.Button(
             totals_frame, text="Exportar p/ PDF",
             command=lambda: self.gerar_pdf_orcamento(self.label_numero_orc.cget("text")),
             bootstyle="danger-outline"
         ).grid(row=0, column=6, padx=8)
 
-
         # carregar clientes e produtos nos combos
         self.carregar_combos_pedido()
+
 
     def carregar_orcamento_para_edicao(self, numero_pedido):
         """
         Carrega um orçamento salvo para edição na aba 'Orçamentos'.
         """
-        # Buscar dados principais do pedido (inclui cliente_id)
+        # Buscar dados principais do pedido (inclui cliente_id e status)
         self.cursor.execute('''
-            SELECT p.data_pedido, p.cliente_id, p.valor_produtos, p.valor_icms, p.valor_ipi, p.valor_pis, p.valor_cofins,
-                p.valor_total, p.representante, p.condicoes_pagamento, p.desconto, p.observacoes, p.validade
+            SELECT p.data_pedido, p.cliente_id, p.valor_produtos, p.valor_icms, p.valor_ipi, 
+                p.valor_pis, p.valor_cofins, p.valor_total, p.representante, 
+                p.condicoes_pagamento, p.desconto, p.observacoes, p.validade, p.status
             FROM pedidos p
             WHERE p.numero_pedido = ?
         ''', (numero_pedido,))
@@ -780,7 +790,7 @@ class SistemaPedidos:
             return
 
         (data_pedido, cliente_id, subtotal, icms, ipi, pis, cofins, total,
-        representante, cond_pag, desconto, observacoes, validade) = pedido
+        representante, cond_pag, desconto, observacoes, validade, status) = pedido
 
         # preencher cabeçalho
         try:
@@ -801,6 +811,10 @@ class SistemaPedidos:
         self.entry_desconto.insert(0, str(desconto or 0))
         self.text_obs.delete("1.0", tk.END)
         self.text_obs.insert("1.0", observacoes or "")
+
+        # 👉 preencher o ComboBox de status
+        if hasattr(self, "combo_status_orc"):
+            self.combo_status_orc.set(status or "Em Aberto")
 
         # selecionar cliente no combo (formato: "id - nome")
         self.cursor.execute("SELECT razao_social FROM clientes WHERE id=?", (cliente_id,))
@@ -824,8 +838,16 @@ class SistemaPedidos:
         itens = self.cursor.fetchall()
         for prod_id, codigo, descricao, qtd, valor_unit in itens:
             total_item = (qtd or 0) * (valor_unit or 0)
-            self.tree_pedido_items.insert('', 'end', values=(f"{codigo} - {descricao}", qtd, formatar_moeda(valor_unit), formatar_moeda(total_item)))
-            self.itens_pedido_temp.append({'produto_id': prod_id, 'codigo': codigo, 'descricao': descricao, 'qtd': qtd, 'valor': float(valor_unit)})
+            self.tree_pedido_items.insert('', 'end',
+                values=(f"{codigo} - {descricao}", qtd,
+                        formatar_moeda(valor_unit), formatar_moeda(total_item)))
+            self.itens_pedido_temp.append({
+                'produto_id': prod_id,
+                'codigo': codigo,
+                'descricao': descricao,
+                'qtd': qtd,
+                'valor': float(valor_unit)
+            })
 
         # atualizar totais e marcar modo edição
         self.atualizar_totais()
@@ -835,14 +857,13 @@ class SistemaPedidos:
             self.btn_finalizar_pedido.config(text="Atualizar Orçamento")
         except:
             pass
+
         # muda para a aba de orçamentos
-        self.notebook.select( self.notebook.tabs().index(self.notebook.select()) if False else 0 )  # placeholder safe select
-        # selecionar a aba Orçamentos: procurar índice onde texto == "Orçamentos"
         for i in range(len(self.notebook.tabs())):
-            tab_text = self.notebook.tab(i, "text")
-            if tab_text == "Orçamentos":
+            if self.notebook.tab(i, "text") == "Orçamentos":
                 self.notebook.select(i)
                 break
+
 
     def remover_item(self):
         """
@@ -1156,13 +1177,15 @@ class SistemaPedidos:
 
             if hasattr(self, 'edicao_numero_pedido') and self.edicao_numero_pedido:
                 # === Atualizar pedido existente ===
+                status = self.combo_status_orc.get() or "Em Aberto"  # pega do combobox
+
                 self.cursor.execute('''
                     UPDATE pedidos
                     SET data_pedido=?, cliente_id=?, valor_produtos=?, valor_icms=?, valor_ipi=?, valor_pis=?, valor_cofins=?, valor_total=?,
                         representante=?, condicoes_pagamento=?, desconto=?, status=?, observacoes=?, validade=?
                     WHERE numero_pedido=?
                 ''', (data_pedido, cliente_id, subtotal, total_icms, total_ipi, total_pis, total_cofins, total_final,
-                    representante, cond_pag, desconto, "Em Aberto", observacoes, validade, numero_pedido))
+                    representante, cond_pag, desconto, status, observacoes, validade, numero_pedido))
 
                 # remover itens antigos e inserir os novos
                 self.cursor.execute('DELETE FROM pedido_itens WHERE numero_pedido = ?', (numero_pedido,))
