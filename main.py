@@ -80,6 +80,8 @@ class SistemaPedidos:
         self.criar_aba_produtos()
         self.criar_aba_pedidos()
         self.criar_aba_consulta_orcamentos()
+        self.edicao_numero_pedido = None
+    
 
     
     def init_db(self):
@@ -663,12 +665,96 @@ class SistemaPedidos:
         self.label_total = ttk.Label(totals_frame, text="TOTAL: R$ 0,00", font=('Arial', 11, 'bold'))
         self.label_total.grid(row=0, column=2, padx=8)
         
-        ttk.Button(totals_frame, text="Finalizar (Salvar) Orçamento", command=self.finalizar_pedido).grid(row=0, column=3, padx=8)
+        # criar botões e guardar referência do botão de finalizar para trocar texto no modo edição
+        self.btn_finalizar_pedido = ttk.Button(totals_frame, text="Finalizar (Salvar) Orçamento", command=self.finalizar_pedido)
+        self.btn_finalizar_pedido.grid(row=0, column=3, padx=8)
         ttk.Button(totals_frame, text="Limpar Orçamento", command=self.limpar_pedido).grid(row=0, column=4, padx=8)
         ttk.Button(totals_frame, text="Gerar PDF", command=self.gerar_pdf_orcamento).grid(row=0, column=5, padx=8)
         ttk.Button(totals_frame, text="Exportar Excel", command=self.exportar_excel_orcamento).grid(row=0, column=6, padx=8)
+
         
         self.carregar_combos_pedido()
+    def carregar_orcamento_para_edicao(self, numero_pedido):
+        """
+        Carrega um orçamento salvo para edição na aba 'Orçamentos'.
+        """
+        # Buscar dados principais do pedido (inclui cliente_id)
+        self.cursor.execute('''
+            SELECT p.data_pedido, p.cliente_id, p.valor_produtos, p.valor_icms, p.valor_ipi, p.valor_pis, p.valor_cofins,
+                p.valor_total, p.representante, p.condicoes_pagamento, p.desconto, p.observacoes, p.validade
+            FROM pedidos p
+            WHERE p.numero_pedido = ?
+        ''', (numero_pedido,))
+        pedido = self.cursor.fetchone()
+        if not pedido:
+            messagebox.showerror("Erro", "Orçamento não encontrado para edição.")
+            return
+
+        (data_pedido, cliente_id, subtotal, icms, ipi, pis, cofins, total,
+        representante, cond_pag, desconto, observacoes, validade) = pedido
+
+        # preencher cabeçalho
+        try:
+            data_str = datetime.strptime(data_pedido, "%Y-%m-%d %H:%M:%S").strftime('%d/%m/%Y')
+        except:
+            data_str = data_pedido
+
+        self.entry_data_orc.delete(0, tk.END)
+        self.entry_data_orc.insert(0, data_str)
+        self.label_numero_orc.config(text=numero_pedido)
+        self.entry_representante.delete(0, tk.END)
+        self.entry_representante.insert(0, representante or "")
+        self.entry_cond_pag.delete(0, tk.END)
+        self.entry_cond_pag.insert(0, cond_pag or "")
+        self.entry_validade.delete(0, tk.END)
+        self.entry_validade.insert(0, validade or "")
+        self.entry_desconto.delete(0, tk.END)
+        self.entry_desconto.insert(0, str(desconto or 0))
+        self.text_obs.delete("1.0", tk.END)
+        self.text_obs.insert("1.0", observacoes or "")
+
+        # selecionar cliente no combo (formato: "id - nome")
+        self.cursor.execute("SELECT razao_social FROM clientes WHERE id=?", (cliente_id,))
+        cliente_nome = self.cursor.fetchone()
+        if cliente_nome:
+            self.combo_cliente.set(f"{cliente_id} - {cliente_nome[0]}")
+        else:
+            self.combo_cliente.set("")
+
+        # carregar itens do pedido para a lista temporária e treeview
+        self.itens_pedido_temp = []
+        for item in self.tree_pedido_items.get_children():
+            self.tree_pedido_items.delete(item)
+
+        self.cursor.execute('''
+            SELECT pr.id, pr.codigo, pr.descricao, pi.qtd, pi.valor_unitario
+            FROM pedido_itens pi
+            JOIN produtos pr ON pi.produto_id = pr.id
+            WHERE pi.numero_pedido = ?
+        ''', (numero_pedido,))
+        itens = self.cursor.fetchall()
+        for prod_id, codigo, descricao, qtd, valor_unit in itens:
+            total_item = (qtd or 0) * (valor_unit or 0)
+            self.tree_pedido_items.insert('', 'end', values=(f"{codigo} - {descricao}", qtd, formatar_moeda(valor_unit), formatar_moeda(total_item)))
+            self.itens_pedido_temp.append({'produto_id': prod_id, 'codigo': codigo, 'descricao': descricao, 'qtd': qtd, 'valor': float(valor_unit)})
+
+        # atualizar totais e marcar modo edição
+        self.atualizar_totais()
+        self.edicao_numero_pedido = numero_pedido
+        # trocar texto do botão
+        try:
+            self.btn_finalizar_pedido.config(text="Atualizar Orçamento")
+        except:
+            pass
+        # muda para a aba de orçamentos
+        self.notebook.select( self.notebook.tabs().index(self.notebook.select()) if False else 0 )  # placeholder safe select
+        # selecionar a aba Orçamentos: procurar índice onde texto == "Orçamentos"
+        for i in range(len(self.notebook.tabs())):
+            tab_text = self.notebook.tab(i, "text")
+            if tab_text == "Orçamentos":
+                self.notebook.select(i)
+                break
+
     
     def carregar_combos_pedido(self):
         self.cursor.execute('SELECT id, razao_social FROM clientes')
@@ -871,12 +957,11 @@ class SistemaPedidos:
         frame_botoes = ttk.Frame(top)
         frame_botoes.pack(fill="x", pady=10)
 
-        ttk.Button(frame_botoes, text="Gerar PDF", 
-                command=lambda: self.gerar_pdf_orcamento(numero_pedido)).pack(side="left", padx=5)
-        ttk.Button(frame_botoes, text="Exportar Excel", 
-                command=self.exportar_excel_orcamento).pack(side="left", padx=5)
-        ttk.Button(frame_botoes, text="Fechar", 
-                command=top.destroy).pack(side="right", padx=5)
+        ttk.Button(frame_botoes, text="Gerar PDF", command=lambda: self.gerar_pdf_orcamento(numero_pedido)).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, text="Exportar Excel", command=self.exportar_excel_orcamento).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, text="Editar Orçamento", 
+                command=lambda: (top.destroy(), self.carregar_orcamento_para_edicao(numero_pedido))).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, text="Fechar", command=top.destroy).pack(side="right", padx=5)
 
             
 
@@ -900,14 +985,18 @@ class SistemaPedidos:
             return
         try:
             cliente_id = int(self.combo_cliente.get().split(' - ')[0])
-            self.cursor.execute("SELECT COUNT(*) FROM pedidos")
-            total_registros = self.cursor.fetchone()[0] or 0
-            numero_pedido = f"ORC-{total_registros+1:04d}"
-            self.label_numero_orc.config(text=numero_pedido)
+            # se estiver em edição, usamos o numero existente
+            if hasattr(self, 'edicao_numero_pedido') and self.edicao_numero_pedido:
+                numero_pedido = self.edicao_numero_pedido
+            else:
+                self.cursor.execute("SELECT COUNT(*) FROM pedidos")
+                total_registros = self.cursor.fetchone()[0] or 0
+                numero_pedido = f"ORC-{total_registros+1:04d}"
+                self.label_numero_orc.config(text=numero_pedido)
 
             data_pedido = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-            # 🔹 Calcula todos os totais corretamente
+            # calcular totais
             subtotal, total_icms, total_ipi, total_pis, total_cofins, total = self.calcular_totais(self.itens_pedido_temp)
 
             representante = self.entry_representante.get()
@@ -916,34 +1005,65 @@ class SistemaPedidos:
             desconto = float(self.entry_desconto.get() or 0)
             observacoes = self.text_obs.get("1.0", tk.END).strip()
 
-            # aplica desconto ao total
-            total -= desconto
+            total_final = total - desconto
 
-            # 🔹 Agora grava todos os impostos no banco
-            self.cursor.execute('''
-                INSERT INTO pedidos 
-                (numero_pedido, data_pedido, cliente_id, valor_produtos, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_total, representante,
-                condicoes_pagamento, desconto, status, observacoes, validade)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (numero_pedido, data_pedido, cliente_id, subtotal, total_icms, total_ipi, total_pis, total_cofins, total,
-                representante, cond_pag, desconto, "Em Aberto", observacoes, validade))
-
-            # Inserir os itens do orçamento
-            for item in self.itens_pedido_temp:
+            if hasattr(self, 'edicao_numero_pedido') and self.edicao_numero_pedido:
+                # === Atualizar pedido existente ===
                 self.cursor.execute('''
-                    INSERT INTO pedido_itens (numero_pedido, produto_id, qtd, valor_unitario)
-                    VALUES (?, ?, ?, ?)
-                ''', (numero_pedido, item['produto_id'], item['qtd'], item['valor']))
+                    UPDATE pedidos
+                    SET data_pedido=?, cliente_id=?, valor_produtos=?, valor_icms=?, valor_ipi=?, valor_pis=?, valor_cofins=?, valor_total=?,
+                        representante=?, condicoes_pagamento=?, desconto=?, status=?, observacoes=?, validade=?
+                    WHERE numero_pedido=?
+                ''', (data_pedido, cliente_id, subtotal, total_icms, total_ipi, total_pis, total_cofins, total_final,
+                    representante, cond_pag, desconto, "Em Aberto", observacoes, validade, numero_pedido))
 
-            self.conn.commit()
-            messagebox.showinfo("Sucesso", f"Orçamento {numero_pedido} salvo com sucesso!")
+                # remover itens antigos e inserir os novos
+                self.cursor.execute('DELETE FROM pedido_itens WHERE numero_pedido = ?', (numero_pedido,))
+                for item in self.itens_pedido_temp:
+                    self.cursor.execute('''
+                        INSERT INTO pedido_itens (numero_pedido, produto_id, qtd, valor_unitario)
+                        VALUES (?, ?, ?, ?)
+                    ''', (numero_pedido, item['produto_id'], item['qtd'], item['valor']))
 
-            # Limpar itens temporários
+                self.conn.commit()
+                messagebox.showinfo("Sucesso", f"Orçamento {numero_pedido} atualizado com sucesso!")
+                # sair do modo edição
+                self.edicao_numero_pedido = None
+                try:
+                    self.btn_finalizar_pedido.config(text="Finalizar (Salvar) Orçamento")
+                except:
+                    pass
+            else:
+                # === Inserir novo pedido ===
+                self.cursor.execute('''
+                    INSERT INTO pedidos 
+                    (numero_pedido, data_pedido, cliente_id, valor_produtos, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_total, representante,
+                    condicoes_pagamento, desconto, status, observacoes, validade)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (numero_pedido, data_pedido, cliente_id, subtotal, total_icms, total_ipi, total_pis, total_cofins, total_final,
+                    representante, cond_pag, desconto, "Em Aberto", observacoes, validade))
+
+                for item in self.itens_pedido_temp:
+                    self.cursor.execute('''
+                        INSERT INTO pedido_itens (numero_pedido, produto_id, qtd, valor_unitario)
+                        VALUES (?, ?, ?, ?)
+                    ''', (numero_pedido, item['produto_id'], item['qtd'], item['valor']))
+
+                self.conn.commit()
+                messagebox.showinfo("Sucesso", f"Orçamento {numero_pedido} salvo com sucesso!")
+
+            # limpar itens temporários e UI
             self.itens_pedido_temp.clear()
             self.tree_pedido_items.delete(*self.tree_pedido_items.get_children())
+            self.carregar_combos_pedido()
+            try:
+                # recarregar a lista de orçamentos (se existir)
+                self.buscar_orcamento()
+            except:
+                pass
 
         except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao salvar orçamento: {e}")
+            messagebox.showerror("Erro", f"Falha ao salvar/atualizar orçamento: {e}")
 
 
     
@@ -1488,3 +1608,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = SistemaPedidos(root)
     root.mainloop()
+    
