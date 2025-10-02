@@ -180,55 +180,128 @@ class SistemaPedidos:
     # ------------------- Clientes -------------------
     
     
+        # ------------------- Clientes -------------------
+
     def criar_aba_clientes(self):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Clientes")
-        form_frame = ttk.LabelFrame(frame, text="Cadastro de Cliente", padding=10)
-        form_frame.pack(fill='x', padx=10, pady=10)
-        
-        labels = ['Razão Social:', 'CNPJ:', 'IE:', 'Endereço:', 'Cidade:', 'Estado:', 'CEP:', 'Telefone:', 'Email:']
-        self.cliente_entries = {}
-        for i, label in enumerate(labels):
-            ttk.Label(form_frame, text=label).grid(row=i//3, column=(i%3)*2, sticky='w', padx=5, pady=5)
-            entry = ttk.Entry(form_frame, width=28)
-            entry.grid(row=i//3, column=(i%3)*2+1, padx=5, pady=5)
-            chave = normalizar_chave(label)
-            self.cliente_entries[chave] = entry
 
-        search_frame = ttk.Frame(frame)
-        search_frame.pack(fill='x', padx=10, pady=5)
-        ttk.Label(search_frame, text="Buscar Cliente:").pack(side='left', padx=5)
-        self.entry_busca_cliente = ttk.Entry(search_frame, width=40)
-        self.entry_busca_cliente.pack(side='left', padx=5)
-        self.entry_busca_cliente.bind("<KeyRelease>", lambda e: self.carregar_clientes(filtro=self.entry_busca_cliente.get()))
+        # --- Barra de botões ---
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill='x', padx=10, pady=5)
 
-        # Permitir duplo clique para editar
-       
-        
-        btn_frame = ttk.Frame(form_frame)
-        btn_frame.grid(row=3, column=0, columnspan=6, pady=10)
-        ttk.Button(btn_frame, text="Cadastrar Cliente", command=self.salvar_cliente).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Novo Cliente", command=self.limpar_cliente).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Importar Arquivo", command=lambda: self.importar_dados("clientes")).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Adicionar",bootstyle=SUCCESS, command=self.adicionar_cliente).pack(side='left', padx=5 )
+        ttk.Button(btn_frame, text="Editar", bootstyle=INFO, command=lambda: self.editar_cliente(None)).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Excluir",bootstyle=DANGER,  command=self.excluir_cliente).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Importar Arquivo",bootstyle=WARNING, command=lambda: self.importar_dados("clientes")).pack(side='left', padx=5)
 
-        
+        # --- Lista de clientes ---
         list_frame = ttk.LabelFrame(frame, text="Clientes Cadastrados", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=10)
+
         cols = ('ID', 'Razão Social', 'CNPJ', 'Cidade', 'Telefone')
-        self.tree_clientes = ttk.Treeview(list_frame, columns=cols, show='headings', height=8)
+        self.tree_clientes = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
         for col in cols:
             self.tree_clientes.heading(col, text=col)
             self.tree_clientes.column(col, width=140)
+
         scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.tree_clientes.yview)
         self.tree_clientes.configure(yscrollcommand=scrollbar.set)
         self.tree_clientes.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
 
+        # Duplo clique abre visualização
         self.tree_clientes.bind("<Double-1>", self.visualizar_cliente)
 
-
-        
         self.carregar_clientes()
+
+    def adicionar_cliente(self):
+        self.abrir_formulario_cliente()
+
+    def editar_cliente(self, event=None):
+        item = self.tree_clientes.selection()
+        if not item:
+            messagebox.showwarning("Atenção", "Selecione um cliente para editar.")
+            return
+        valores = self.tree_clientes.item(item[0], "values")
+        cliente_id = valores[0]
+        self.cursor.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,))
+        cliente = self.cursor.fetchone()
+        if cliente:
+            self.abrir_formulario_cliente(cliente)
+
+
+    def excluir_cliente(self):
+        item = self.tree_clientes.selection()
+        if not item:
+            messagebox.showwarning("Atenção", "Selecione um cliente para excluir.")
+            return
+
+        valores = self.tree_clientes.item(item[0], "values")
+        cliente_id = valores[0]
+
+        if messagebox.askyesno("Confirmação", "Tem certeza que deseja excluir este cliente?"):
+            try:
+                self.cursor.execute("DELETE FROM clientes WHERE id=?", (cliente_id,))
+                self.conn.commit()
+                self.carregar_clientes()
+                messagebox.showinfo("Sucesso", "Cliente excluído com sucesso!")
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao excluir cliente: {e}")
+
+    def abrir_formulario_cliente(self, cliente=None):
+        """Abre popup para adicionar/editar cliente."""
+        top = tk.Toplevel(self.root)
+        top.title("Cadastro de Cliente")
+        top.geometry("600x400")
+
+        labels = ['Razão Social:', 'CNPJ:', 'IE:', 'Endereço:', 'Cidade:', 'Estado:', 'CEP:', 'Telefone:', 'Email:']
+        entries = {}
+        for i, label in enumerate(labels):
+            ttk.Label(top, text=label).grid(row=i//2, column=(i%2)*2, sticky='w', padx=5, pady=5)
+            entry = ttk.Entry(top, width=28)
+            entry.grid(row=i//2, column=(i%2)*2+1, padx=5, pady=5)
+            chave = normalizar_chave(label)
+            entries[chave] = entry
+
+        # Se for edição, preencher os campos
+        if cliente:
+            keys = ['id','razao_social','cnpj','ie','endereco','cidade','estado','cep','telefone','email']
+            for k, v in zip(keys, cliente):
+                if k in entries:
+                    entries[k].insert(0, v or "")
+
+        def salvar():
+            dados = {k: v.get() for k, v in entries.items()}
+            if not dados['razao_social'] or not dados['cnpj']:
+                messagebox.showwarning("Atenção", "Razão Social e CNPJ são obrigatórios!")
+                return
+            try:
+                if cliente:  # editar
+                    self.cursor.execute('''
+                        UPDATE clientes
+                        SET razao_social=?, cnpj=?, ie=?, endereco=?, cidade=?, estado=?, cep=?, telefone=?, email=?
+                        WHERE id=?
+                    ''', (dados['razao_social'], dados['cnpj'], dados.get('ie'), dados.get('endereco'),
+                        dados.get('cidade'), dados.get('estado'), dados.get('cep'),
+                        dados.get('telefone'), dados.get('email'), cliente[0]))
+                else:  # novo
+                    self.cursor.execute('''
+                        INSERT INTO clientes (razao_social, cnpj, ie, endereco, cidade, estado, cep, telefone, email)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (dados['razao_social'], dados['cnpj'], dados.get('ie'), dados.get('endereco'),
+                        dados.get('cidade'), dados.get('estado'), dados.get('cep'),
+                        dados.get('telefone'), dados.get('email')))
+                self.conn.commit()
+                self.carregar_clientes()
+                top.destroy()
+            except sqlite3.IntegrityError:
+                messagebox.showerror("Erro", "CNPJ já cadastrado!")
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao salvar cliente: {e}")
+
+        ttk.Button(top, text="Salvar", command=salvar).grid(row=6, column=0, columnspan=2, pady=10)
+
     def criar_aba_consulta_orcamentos(self):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Consultar Orçamentos")
@@ -405,20 +478,18 @@ class SistemaPedidos:
         for row in self.cursor.fetchall():
             self.tree_clientes.insert('', 'end', values=row)
 
-    def editar_cliente(self, event):
-            item = self.tree_clientes.selection()
-            if not item: return
-            valores = self.tree_clientes.item(item[0], "values")
-            cliente_id = valores[0]
-            self.cursor.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,))
-            cliente = self.cursor.fetchone()
-            if cliente:
-                keys = ['id','razao_social','cnpj','ie','endereco','cidade','estado','cep','telefone','email']
-                for k, v in zip(keys, cliente):
-                    if k in self.cliente_entries:
-                        self.cliente_entries[k].delete(0, tk.END)
-                        self.cliente_entries[k].insert(0, v or "")
-                self.cliente_edicao_id = cliente_id
+    def editar_cliente(self, event=None):
+        item = self.tree_clientes.selection()
+        if not item:
+            messagebox.showwarning("Atenção", "Selecione um cliente para editar.")
+            return
+        valores = self.tree_clientes.item(item[0], "values")
+        cliente_id = valores[0]
+        self.cursor.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,))
+        cliente = self.cursor.fetchone()
+        if cliente:
+            self.abrir_formulario_cliente(cliente)
+
 
     # ------------------- Produtos -------------------
     def criar_aba_produtos(self):
@@ -1034,8 +1105,8 @@ class SistemaPedidos:
         frame_botoes.pack(fill="x", pady=10)
 
         
-        ttk.Button(frame_botoes, text="Exportar p/ Excel", command=self.exportar_excel_orcamento).pack(side="left", padx=5)
-        ttk.Button(frame_botoes, text="Abrir Orçamento", 
+        ttk.Button(frame_botoes, text="Exportar p/ Excel", bootstyle=DANGER,command=self.exportar_excel_orcamento).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, bootstyle=INFO, text="Abrir Orçamento", 
                 command=lambda: (top.destroy(), self.carregar_orcamento_para_edicao(numero_pedido))).pack(side="left", padx=5)
         ttk.Button(frame_botoes, text="Fechar", command=top.destroy).pack(side="right", padx=5)
 
