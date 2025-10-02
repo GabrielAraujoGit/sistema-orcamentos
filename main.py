@@ -3,6 +3,7 @@ from tkinter import ttk, messagebox, filedialog
 import sqlite3
 from datetime import datetime
 import unicodedata
+import re
 from decimal import Decimal
 import csv
 import openpyxl
@@ -13,7 +14,9 @@ from openpyxl.drawing.image import Image
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+import ttkbootstrap as tb
+from ttkbootstrap.constants import * 
 import os
 
 
@@ -81,7 +84,7 @@ class SistemaPedidos:
         self.criar_aba_pedidos()
         self.criar_aba_consulta_orcamentos()
         self.edicao_numero_pedido = None
-    
+
 
     
     def init_db(self):
@@ -204,9 +207,9 @@ class SistemaPedidos:
         
         btn_frame = ttk.Frame(form_frame)
         btn_frame.grid(row=3, column=0, columnspan=6, pady=10)
-        ttk.Button(btn_frame, text="Salvar Cliente", command=self.salvar_cliente).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Limpar", command=self.limpar_cliente).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Importar Clientes", command=lambda: self.importar_dados("clientes")).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Cadastrar Cliente", command=self.salvar_cliente).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Novo Cliente", command=self.limpar_cliente).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Importar Arquivo", command=lambda: self.importar_dados("clientes")).pack(side='left', padx=5)
 
         
         list_frame = ttk.LabelFrame(frame, text="Clientes Cadastrados", padding=10)
@@ -440,9 +443,9 @@ class SistemaPedidos:
         
         btn_frame = ttk.Frame(form_frame)
         btn_frame.grid(row=2, column=0, columnspan=8, pady=10)
-        ttk.Button(btn_frame, text="Salvar Produto", command=self.salvar_produto).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Limpar", command=self.limpar_produto).pack(side='left', padx=5)
-        ttk.Button(btn_frame, text="Importar Produtos", command=lambda: self.importar_dados("produtos")).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Cadastrar Produto", command=self.salvar_produto).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Novo Produto", command=self.limpar_produto).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Importar Arquivo", command=lambda: self.importar_dados("produtos")).pack(side='left', padx=5)
             
         
         list_frame = ttk.LabelFrame(frame, text="Produtos Cadastrados", padding=10)
@@ -579,101 +582,116 @@ class SistemaPedidos:
             self.btn_salvar_produto.config(text="Atualizar Produto")
         
     # ------------------- Pedidos/Orçamentos -------------------
+
+
     def criar_aba_pedidos(self):
-        frame = ttk.Frame(self.notebook)
+        frame = tb.Frame(self.notebook)
         self.notebook.add(frame, text="Orçamentos")
-        
-        # Cabeçalho (Data, Número, Representante)
-        header_frame = ttk.LabelFrame(frame, text="Cabeçalho do Orçamento", padding=6)
+
+        # Cabeçalho
+        header_frame = tb.Labelframe(frame, text="Cabeçalho do Orçamento", padding=6, bootstyle="primary")
         header_frame.pack(fill='x', padx=10, pady=6)
-        ttk.Label(header_frame, text="Data do Orçamento:").grid(row=0, column=0, sticky='w', padx=5)
-        self.entry_data_orc = ttk.Entry(header_frame, width=15)
+
+        tb.Label(header_frame, text="Data do Orçamento:", bootstyle="inverse-primary").grid(row=0, column=0, sticky=W, padx=5)
+        self.entry_data_orc = tb.Entry(header_frame, width=15)
         self.entry_data_orc.grid(row=0, column=1, padx=5)
         self.entry_data_orc.insert(0, datetime.now().strftime('%d/%m/%Y'))
-        ttk.Label(header_frame, text="Nº do Orçamento:").grid(row=0, column=2, sticky='w', padx=5)
-        self.label_numero_orc = ttk.Label(header_frame, text="Será gerado ao salvar")
+
+        tb.Label(header_frame, text="Nº do Orçamento:", bootstyle="inverse-primary").grid(row=0, column=2, sticky=W, padx=5)
+        self.label_numero_orc = tb.Label(header_frame, text="Será gerado ao salvar", bootstyle="secondary")
         self.label_numero_orc.grid(row=0, column=3, padx=5)
-        ttk.Label(header_frame, text="Representante:").grid(row=0, column=4, sticky='w', padx=5)
-        self.entry_representante = ttk.Entry(header_frame, width=25)
+
+        tb.Label(header_frame, text="Representante:", bootstyle="inverse-primary").grid(row=0, column=4, sticky=W, padx=5)
+        self.entry_representante = tb.Entry(header_frame, width=25)
         self.entry_representante.grid(row=0, column=5, padx=5)
-        
-        # Cartao BNDES
-        card_frame = ttk.LabelFrame(frame, text="Cartão BNDES (opcional)", padding=6)
-        card_frame.pack(fill='x', padx=10, pady=6)
-        labels_card = ['Nº DO CARTÃO:', 'VALIDADE:', 'BANDEIRA:', 'BANCO:', 'PARCELAS:', 'NOME DO CARTÃO:']
-        self.card_entries = {}
-        for i, l in enumerate(labels_card):
-            ttk.Label(card_frame, text=l).grid(row=i//3, column=(i%3)*2, sticky='w', padx=5, pady=3)
-            e = ttk.Entry(card_frame, width=30)
-            e.grid(row=i//3, column=(i%3)*2+1, padx=5, pady=3)
-            self.card_entries[normalizar_chave(l)] = e
-                # Campos adicionais do orçamento
-        extra_frame = ttk.LabelFrame(frame, text="Informações Comerciais", padding=6)
+
+        # Informações Comerciais
+        extra_frame = tb.Labelframe(frame, text="Informações Comerciais", padding=6, bootstyle="info")
         extra_frame.pack(fill='x', padx=10, pady=6)
 
-        ttk.Label(extra_frame, text="Condições de Pagamento:").grid(row=0, column=0, sticky='w', padx=5, pady=2)
-        self.entry_cond_pag = ttk.Entry(extra_frame, width=30)
+        tb.Label(extra_frame, text="Condições de Pagamento:").grid(row=0, column=0, sticky=W, padx=5, pady=2)
+        self.entry_cond_pag = tb.Entry(extra_frame, width=30)
         self.entry_cond_pag.grid(row=0, column=1, padx=5)
 
-        ttk.Label(extra_frame, text="Validade (dias):").grid(row=0, column=2, sticky='w', padx=5, pady=2)
-        self.entry_validade = ttk.Entry(extra_frame, width=10)
+        tb.Label(extra_frame, text="Validade (dias):").grid(row=0, column=2, sticky=W, padx=5, pady=2)
+        self.entry_validade = tb.Entry(extra_frame, width=10)
         self.entry_validade.grid(row=0, column=3, padx=5)
 
-        ttk.Label(extra_frame, text="Desconto (R$):").grid(row=1, column=0, sticky='w', padx=5, pady=2)
-        self.entry_desconto = ttk.Entry(extra_frame, width=15)
+        tb.Label(extra_frame, text="Desconto (R$):").grid(row=1, column=0, sticky=W, padx=5, pady=2)
+        self.entry_desconto = tb.Entry(extra_frame, width=15)
         self.entry_desconto.grid(row=1, column=1, padx=5)
 
-        ttk.Label(extra_frame, text="Observações:").grid(row=2, column=0, sticky='nw', padx=5, pady=2)
+        tb.Label(extra_frame, text="Observações:").grid(row=2, column=0, sticky=NW, padx=5, pady=2)
         self.text_obs = tk.Text(extra_frame, width=80, height=3)
         self.text_obs.grid(row=2, column=1, columnspan=3, padx=5, pady=2)
 
-
-
-
-        # seleção cliente / produto
-        top_frame = ttk.LabelFrame(frame, text="Novo Item", padding=6)
+        # Seleção cliente / produto
+        top_frame = tb.Labelframe(frame, text="Novo Item", padding=6, bootstyle="secondary")
         top_frame.pack(fill='x', padx=10, pady=6)
-        ttk.Label(top_frame, text="Cliente:").grid(row=0, column=0, sticky='w', padx=5)
-        self.combo_cliente = ttk.Combobox(top_frame, width=60)
+
+        tb.Label(top_frame, text="Cliente:").grid(row=0, column=0, sticky=W, padx=5)
+        self.combo_cliente = tb.Combobox(top_frame, width=60)
         self.combo_cliente.grid(row=0, column=1, padx=5, columnspan=4)
-        self.combo_cliente.bind("<Return>", self.filtrar_clientes)
-        ttk.Label(top_frame, text="Produto:").grid(row=1, column=0, sticky='w', padx=5)
-        self.combo_produto = ttk.Combobox(top_frame, width=60, state='normal')
+
+        tb.Label(top_frame, text="Produto:").grid(row=1, column=0, sticky=W, padx=5)
+        self.combo_produto = tb.Combobox(top_frame, width=60, state='normal')
         self.combo_produto.grid(row=1, column=1, padx=5, columnspan=3)
-        ttk.Label(top_frame, text="Quantidade:").grid(row=1, column=4, sticky='w', padx=5)
-        self.entry_qtd = ttk.Entry(top_frame, width=8)
+
+        tb.Label(top_frame, text="Quantidade:").grid(row=1, column=4, sticky=W, padx=5)
+        self.entry_qtd = tb.Entry(top_frame, width=8)
         self.entry_qtd.grid(row=1, column=5, padx=5)
-        ttk.Button(top_frame, text="Adicionar Item", command=self.adicionar_item_pedido).grid(row=1, column=6, padx=5)
-        
-        # itens
-        items_frame = ttk.LabelFrame(frame, text="Itens do Orçamento", padding=6)
+
+        tb.Button(top_frame, text="Adicionar Item", command=self.adicionar_item_pedido, bootstyle="success").grid(row=1, column=6, padx=5)
+        tb.Button(top_frame, text="Remover Item", command=self.remover_item, bootstyle="danger").grid(row=1, column=7, padx=5)
+
+        # Itens
+        items_frame = tb.Labelframe(frame, text="Itens do Orçamento", padding=6, bootstyle="info")
         items_frame.pack(fill='both', expand=True, padx=10, pady=6)
+
         cols = ('Produto', 'Qtd', 'Valor Unit.', 'Total')
-        self.tree_pedido_items = ttk.Treeview(items_frame, columns=cols, show='headings', height=9)
+        self.tree_pedido_items = tb.Treeview(items_frame, columns=cols, show='headings', height=9, bootstyle="info")
         for col in cols:
             self.tree_pedido_items.heading(col, text=col)
             self.tree_pedido_items.column(col, width=180)
         self.tree_pedido_items.pack(fill='both', expand=True)
-        
-        # totais + ações
-        totals_frame = ttk.LabelFrame(frame, text="Totais & Ações", padding=6)
+
+        # Totais + ações
+        # Totais + ações
+        totals_frame = tb.Labelframe(frame, text="Totais & Ações", padding=6, bootstyle="warning")
         totals_frame.pack(fill='x', padx=10, pady=6)
-        self.label_subtotal = ttk.Label(totals_frame, text="Subtotal: R$ 0,00")
+
+        self.label_subtotal = tb.Label(totals_frame, text="Subtotal: R$ 0,00", bootstyle="secondary")
         self.label_subtotal.grid(row=0, column=0, padx=8)
-        self.label_impostos = ttk.Label(totals_frame, text="Impostos: R$ 0,00")
+
+        self.label_impostos = tb.Label(totals_frame, text="Impostos: R$ 0,00", bootstyle="secondary")
         self.label_impostos.grid(row=0, column=1, padx=8)
-        self.label_total = ttk.Label(totals_frame, text="TOTAL: R$ 0,00", font=('Arial', 11, 'bold'))
+
+        self.label_total = tb.Label(totals_frame, text="TOTAL: R$ 0,00",
+                                    font=('Segoe UI', 11, 'bold'), bootstyle="success")
         self.label_total.grid(row=0, column=2, padx=8)
-        
-        # criar botões e guardar referência do botão de finalizar para trocar texto no modo edição
-        self.btn_finalizar_pedido = ttk.Button(totals_frame, text="Finalizar (Salvar) Orçamento", command=self.finalizar_pedido)
+
+        self.btn_finalizar_pedido = tb.Button(
+            totals_frame, text="Salvar Orçamento",
+            command=self.finalizar_pedido, bootstyle="success"
+        )
         self.btn_finalizar_pedido.grid(row=0, column=3, padx=8)
-        ttk.Button(totals_frame, text="Limpar Orçamento", command=self.limpar_pedido).grid(row=0, column=4, padx=8)
-        ttk.Button(totals_frame, text="Gerar PDF", command=self.gerar_pdf_orcamento).grid(row=0, column=5, padx=8)
-        ttk.Button(totals_frame, text="Exportar Excel", command=self.exportar_excel_orcamento).grid(row=0, column=6, padx=8)
+
+        tb.Button(
+            totals_frame, text="Novo Orçamento",
+            command=self.limpar_pedido, bootstyle="secondary"
+        ).grid(row=0, column=4, padx=8)
 
         
+        tb.Button(
+            totals_frame, text="Exportar p/ PDF",
+            command=lambda: self.gerar_pdf_orcamento(self.label_numero_orc.cget("text")),
+            bootstyle="danger-outline"
+        ).grid(row=0, column=6, padx=8)
+
+
+        # carregar clientes e produtos nos combos
         self.carregar_combos_pedido()
+
     def carregar_orcamento_para_edicao(self, numero_pedido):
         """
         Carrega um orçamento salvo para edição na aba 'Orçamentos'.
@@ -755,7 +773,30 @@ class SistemaPedidos:
                 self.notebook.select(i)
                 break
 
-    
+    def remover_item(self):
+        """
+        Remove o item selecionado do Treeview e da lista temporária de itens.
+        """
+        selecionado = self.tree_pedido_items.selection()
+        if not selecionado:
+            messagebox.showwarning("Atenção", "Selecione um item para remover.")
+            return
+
+        for item_id in selecionado:
+            valores = self.tree_pedido_items.item(item_id, "values")
+            if valores:
+                descricao = valores[0]  # vem no formato "codigo - descrição"
+                # remover da lista temporária
+                for i, item in enumerate(self.itens_pedido_temp):
+                    if f"{item['codigo']} - {item['descricao']}" == descricao:
+                        del self.itens_pedido_temp[i]
+                        break
+            # remover do treeview
+            self.tree_pedido_items.delete(item_id)
+
+        # atualizar totais depois da remoção
+        self.atualizar_totais() 
+
     def carregar_combos_pedido(self):
         self.cursor.execute('SELECT id, razao_social FROM clientes')
         clientes = [f"{row[0]} - {row[1]}" for row in self.cursor.fetchall()]
@@ -779,23 +820,58 @@ class SistemaPedidos:
         self.combo_cliente.event_generate('<Down>')  # abre a lista automaticamente
 
     def adicionar_item_pedido(self):
-        if not self.combo_produto.get() or not self.entry_qtd.get():
-            messagebox.showwarning("Atenção", "Selecione um produto e informe a quantidade!")
-            return
         try:
-            produto_id = int(self.combo_produto.get().split(' - ')[0])
-            qtd = int(self.entry_qtd.get())
-            self.cursor.execute('SELECT codigo, descricao, valor_unitario FROM produtos WHERE id = ?', (produto_id,))
+            produto_str = self.combo_produto.get()
+            if not produto_str:
+                messagebox.showwarning("Atenção", "Selecione um produto!")
+                return
+
+            produto_id = int(produto_str.split(" - ")[0])
+            qtd = float(self.entry_qtd.get() or 1)
+
+            self.cursor.execute("SELECT codigo, descricao, valor_unitario            FROM produtos WHERE id = ?", (produto_id,))
             produto = self.cursor.fetchone()
-            if produto:
-                codigo, desc, valor = produto
-                total = valor * qtd
-                self.tree_pedido_items.insert('', 'end', values=(f"{codigo} - {desc}", qtd, formatar_moeda(valor), formatar_moeda(total)))
-                self.itens_pedido_temp.append({'produto_id': produto_id, 'codigo': codigo, 'descricao': desc, 'qtd': qtd, 'valor': float(valor)})
-                self.atualizar_totais()
-                self.entry_qtd.delete(0, tk.END)
+            if not produto:
+                messagebox.showerror("Erro", "Produto não encontrado.")
+                return
+
+            codigo, descricao, preco_venda = produto
+
+            # Verifica se já existe o mesmo produto na lista
+            encontrado = False
+            for item in self.itens_pedido_temp:
+                if item["produto_id"] == produto_id:
+                    # Atualiza quantidade e recalcula
+                    item["qtd"] += qtd
+                    encontrado = True
+                    break
+
+            if not encontrado:
+                # adiciona novo item
+                self.itens_pedido_temp.append({
+                    "produto_id": produto_id,
+                    "codigo": codigo,
+                    "descricao": descricao,
+                    "qtd": qtd,
+                    "valor": float(preco_venda or 0)
+                })
+
+            # Atualiza visualização na treeview
+            self.tree_pedido_items.delete(*self.tree_pedido_items.get_children())
+            for item in self.itens_pedido_temp:
+                total_item = item["qtd"] * item["valor"]
+                self.tree_pedido_items.insert(
+                    "", "end",
+                    values=(f"{item['codigo']} - {item['descricao']}",
+                            item["qtd"],
+                            formatar_moeda(item["valor"]),
+                            formatar_moeda(total_item))
+                )
+
+            self.atualizar_totais()
         except Exception as e:
-            messagebox.showerror("Erro", f"Erro ao adicionar item: {e}")
+            messagebox.showerror("Erro", f"Falha ao adicionar item: {e}")
+
     
     def atualizar_totais(self):
         subtotal = sum(item['qtd'] * item['valor'] for item in self.itens_pedido_temp)
@@ -957,9 +1033,9 @@ class SistemaPedidos:
         frame_botoes = ttk.Frame(top)
         frame_botoes.pack(fill="x", pady=10)
 
-        ttk.Button(frame_botoes, text="Gerar PDF", command=lambda: self.gerar_pdf_orcamento(numero_pedido)).pack(side="left", padx=5)
-        ttk.Button(frame_botoes, text="Exportar Excel", command=self.exportar_excel_orcamento).pack(side="left", padx=5)
-        ttk.Button(frame_botoes, text="Editar Orçamento", 
+        
+        ttk.Button(frame_botoes, text="Exportar p/ Excel", command=self.exportar_excel_orcamento).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, text="Abrir Orçamento", 
                 command=lambda: (top.destroy(), self.carregar_orcamento_para_edicao(numero_pedido))).pack(side="left", padx=5)
         ttk.Button(frame_botoes, text="Fechar", command=top.destroy).pack(side="right", padx=5)
 
@@ -1030,7 +1106,7 @@ class SistemaPedidos:
                 # sair do modo edição
                 self.edicao_numero_pedido = None
                 try:
-                    self.btn_finalizar_pedido.config(text="Finalizar (Salvar) Orçamento")
+                    self.btn_finalizar_pedido.config(text="Salvar Orçamento")
                 except:
                     pass
             else:
@@ -1138,12 +1214,66 @@ class SistemaPedidos:
             ''', (numero_pedido,))
             produtos = self.cursor.fetchall()
 
+           
+            # --- pegar nome do cliente para o nome do arquivo ---
+            cliente_nome = None
+
+            # tenta pegar do combo
+            if self.combo_cliente.get():
+                try:
+                    cliente_nome = self.combo_cliente.get().split(" - ", 1)[1]
+                except:
+                    cliente_nome = self.combo_cliente.get()
+
+            # se ainda não tiver nome, busca pelo numero do pedido
+            if not cliente_nome:
+                numero_pedido = self.label_numero_orc.cget("text") if self.label_numero_orc.cget("text") else self.edicao_numero_pedido
+                if numero_pedido:
+                    self.cursor.execute("""
+                        SELECT c.razao_social 
+                        FROM pedidos p
+                        JOIN clientes c ON p.cliente_id = c.id
+                        WHERE p.numero_pedido = ?
+                    """, (numero_pedido,))
+                    row = self.cursor.fetchone()
+                    if row:
+                        cliente_nome = row[0]
+
+            # fallback se ainda estiver vazio
+            if not cliente_nome:
+                cliente_nome = "cliente"
+
+            # sanitizar nome (sem acentos/espacos estranhos)
+            cliente_nome = unicodedata.normalize('NFKD', cliente_nome).encode('ASCII', 'ignore').decode('utf-8')
+            cliente_nome = re.sub(r'[^a-zA-Z0-9_-]', '_', cliente_nome)
+
+            # data no formato dd-mm-yy
+            from datetime import datetime
+            data_str = datetime.now().strftime("%d-%m-%y")
+
+            nome_sugerido = f"orcamento-{cliente_nome}-{data_str}.pdf"
+
+            data_str = datetime.now().strftime("%d-%m-%y")
+
+            nome_sugerido = f"orcamento-{cliente_nome}-{data_str}.pdf"
+
             # Montar PDF
-            nome_arquivo = f"orcamento_{numero_pedido}.pdf"
-            doc = SimpleDocTemplate(nome_arquivo, pagesize=A4,
-                                    leftMargin=30, rightMargin=30, topMargin=40, bottomMargin=40)
+            arquivo = filedialog.asksaveasfilename(
+                initialfile=nome_sugerido,
+                defaultextension=".pdf",
+                filetypes=[("Arquivos PDF", "*.pdf")],
+                title="Salvar orçamento em PDF"
+            )
+            if not arquivo:
+                return  # se cancelar, não gera
+            # cria o doc no caminho escolhido
+            doc = SimpleDocTemplate(arquivo, pagesize=A4,
+                                    leftMargin=30, rightMargin=30,
+                                    topMargin=40, bottomMargin=40)
             estilos = getSampleStyleSheet()
             elementos = []
+
+    
 
             # Logo da empresa
             try:
@@ -1196,22 +1326,28 @@ class SistemaPedidos:
             elementos.append(t_info)
             elementos.append(Spacer(1, 20))
 
+            desc_style = ParagraphStyle(
+                name="Descricao",
+                fontSize=8,          # um pouco menor ajuda caber
+                leading=10,          # altura da linha
+                wordWrap='CJK'       # força quebra automática
+            )
+
             # Tabela de produtos
             tabela = [["Código", "Descrição", "Qtd", "Valor Unit.", "Total"]]
             for codigo, descricao, qtd, valor_unit in produtos:
                 total_item = (qtd or 0) * (valor_unit or 0)
                 tabela.append([
                     codigo,
-                    descricao,
+                    Paragraph(descricao, desc_style),
                     str(qtd),
                     formatar_moeda(valor_unit or 0),
                     formatar_moeda(total_item)
                 ])
 
-            t = Table(tabela, colWidths=[70, 230, 50, 90, 90], repeatRows=1, hAlign="CENTER")
+            t = Table(tabela, colWidths=[60, 280, 50, 80, 80], repeatRows=1, hAlign="CENTER")
             estilo_tabela(t, header=True)
             elementos.append(t)
-            elementos.append(Spacer(1, 20))
 
             # Totais
             totais = [
@@ -1248,7 +1384,7 @@ class SistemaPedidos:
 
             # Gerar arquivo
             doc.build(elementos)
-            messagebox.showinfo("Sucesso", f"PDF gerado: {nome_arquivo}")
+            messagebox.showinfo("Sucesso", f"PDF gerado: {arquivo}")
 
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao gerar PDF: {e}")
