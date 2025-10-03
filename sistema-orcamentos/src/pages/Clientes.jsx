@@ -1,39 +1,98 @@
+import { useState } from "react";
+import { FiPlus, FiEdit2, FiTrash2 } from "react-icons/fi";
+import FormCliente from "../components/FormCliente";
+
 export default function Clientes() {
-  const clientes = [
-    { id: 1, razao: "Empresa Alpha", cnpj: "00.000.000/0001-00", cidade: "São Paulo", telefone: "(11) 99999-0000" },
-    { id: 2, razao: "Empresa Beta", cnpj: "11.111.111/0001-11", cidade: "Rio de Janeiro", telefone: "(21) 98888-1111" }
-  ];
+  const [clientes, setClientes] = useState([
+    { id: 1, nome: "Empresa X", email: "contato@empresa.com", telefone: "(11) 99999-9999" },
+    { id: 2, nome: "Cliente Y", email: "cliente@y.com", telefone: "(21) 98888-8888" },
+  ]);
+
+  const [showModal, setShowModal] = useState(false);
+  const [editingCliente, setEditingCliente] = useState(null);
+
+  const handleAdd = () => {
+    setEditingCliente(null);
+    setShowModal(true);
+  };
+
+  const handleEdit = (cliente) => {
+    setEditingCliente(cliente);
+    setShowModal(true);
+  };
+
+  const handleDelete = (id) => {
+    setClientes(clientes.filter((c) => c.id !== id));
+  };
+
+  const handleSave = (cliente) => {
+    if (cliente.id) {
+      // edição
+      setClientes(clientes.map((c) => (c.id === cliente.id ? cliente : c)));
+    } else {
+      // novo cadastro
+      setClientes([...clientes, { ...cliente, id: Date.now() }]);
+    }
+    setShowModal(false);
+  };
 
   return (
-    <div>
-      <h2 className="text-2xl font-bold mb-4">Clientes</h2>
-      <div className="flex gap-2 mb-4">
-        <button className="bg-green-600 text-white px-3 py-1 rounded">Adicionar</button>
-        <button className="bg-blue-600 text-white px-3 py-1 rounded">Editar</button>
-        <button className="bg-red-600 text-white px-3 py-1 rounded">Excluir</button>
+    <div className="max-w-6xl mx-auto">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-700">👤 Clientes</h2>
+        <button
+          onClick={handleAdd}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded"
+        >
+          <FiPlus /> Novo Cliente
+        </button>
       </div>
-      <table className="w-full bg-white border">
-        <thead>
-          <tr className="bg-gray-200">
-            <th>ID</th>
-            <th>Razão Social</th>
-            <th>CNPJ</th>
-            <th>Cidade</th>
-            <th>Telefone</th>
-          </tr>
-        </thead>
-        <tbody>
-          {clientes.map(c => (
-            <tr key={c.id} className="text-center border-t">
-              <td>{c.id}</td>
-              <td>{c.razao}</td>
-              <td>{c.cnpj}</td>
-              <td>{c.cidade}</td>
-              <td>{c.telefone}</td>
+
+      {/* Tabela */}
+      <div className="bg-white shadow rounded-xl overflow-hidden">
+        <table className="w-full border-collapse">
+          <thead className="bg-gray-100 text-gray-600">
+            <tr>
+              <th className="p-3 text-left">Nome</th>
+              <th className="p-3 text-left">Email</th>
+              <th className="p-3 text-left">Telefone</th>
+              <th className="p-3 text-center">Ações</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {clientes.map((c) => (
+              <tr key={c.id} className="border-t hover:bg-gray-50">
+                <td className="p-3">{c.nome}</td>
+                <td className="p-3">{c.email}</td>
+                <td className="p-3">{c.telefone}</td>
+                <td className="p-3 flex justify-center gap-3">
+                  <button
+                    onClick={() => handleEdit(c)}
+                    className="text-blue-600 hover:text-blue-800"
+                  >
+                    <FiEdit2 />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(c.id)}
+                    className="text-red-600 hover:text-red-800"
+                  >
+                    <FiTrash2 />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal de cadastro/edição */}
+      {showModal && (
+        <FormCliente
+          cliente={editingCliente}
+          onClose={() => setShowModal(false)}
+          onSave={handleSave}
+        />
+      )}
     </div>
   );
 }
