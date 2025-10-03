@@ -19,6 +19,10 @@ Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 - Interfaces de formulários (Clientes/Produtos) mais responsivas com `grid`.
 - Mensagens de erro mais detalhadas, indicando campos obrigatórios faltando.
 
+### Deprecated
+- Tentativa de migrar a interface para **React** documentada, mas **decidido não prosseguir** neste momento.
+  - Registrado em Pull Request separado apenas como histórico.
+
 
 ## \[1.3.0\] - 02/Out/25
 
