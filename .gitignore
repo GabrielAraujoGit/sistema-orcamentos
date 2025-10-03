@@ -13,6 +13,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Lockfiles alternativos
+yarn.lock
+pnpm-lock.yaml
+
 # Ambiente
 .env
 .env.local
@@ -35,6 +39,16 @@ pnpm-debug.log*
 /.cache
 /.eslintcache
 
+# Relatórios de testes
+/coverage
+
 # Mac/Linux
 .DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Deploy
+.vercel
+.netlify
+.docker
