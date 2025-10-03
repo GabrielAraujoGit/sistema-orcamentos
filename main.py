@@ -17,7 +17,10 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import ttkbootstrap as tb
 from ttkbootstrap.constants import * 
+from ttkbootstrap.icons import Icon
 import os
+from ttkbootstrap.icons import Icon
+
 
 
 
@@ -174,7 +177,7 @@ class SistemaPedidos:
         # --- Barra de botões ---
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill='x', padx=10, pady=5)
-
+        
         ttk.Button(btn_frame, text="Adicionar",bootstyle=SUCCESS, command=self.adicionar_cliente).pack(side='left', padx=5 )
         ttk.Button(btn_frame, text="Editar", bootstyle=INFO, command=lambda: self.editar_cliente(None)).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Excluir",bootstyle=DANGER,  command=self.excluir_cliente).pack(side='left', padx=5)
@@ -343,10 +346,12 @@ class SistemaPedidos:
             self.tree_orcamentos.column(col, width=140)
         self.tree_orcamentos.pack(fill="both", expand=True)
 
-        self.tree_orcamentos.tag_configure("Em Aberto", background="#bfdbfe")   # azul claro
-        self.tree_orcamentos.tag_configure("Aprovado", background="#bbf7d0")    # verde claro
-        self.tree_orcamentos.tag_configure("Rejeitado", background="#fecaca")   # vermelho claro
-        self.tree_orcamentos.tag_configure("Cancelado", background="#fed7aa")   # laranja claro
+        # Configuração de cores só no texto do Status
+        self.tree_orcamentos.tag_configure("Em Aberto", foreground="#1d4ed8")   # azul
+        self.tree_orcamentos.tag_configure("Aprovado", foreground="#15803d")    # verde
+        self.tree_orcamentos.tag_configure("Rejeitado", foreground="#dc2626")   # vermelho
+        self.tree_orcamentos.tag_configure("Cancelado", foreground="#ea580c")   # laranja
+
 
         self.tree_orcamentos.bind("<Double-1>", self.visualizar_orcamento)
 
@@ -413,11 +418,13 @@ class SistemaPedidos:
         for row in rows:
             valores = list(row)
             valores[3] = formatar_moeda(valores[3])  # formatar total
-            status = valores[5]  # coluna de Status
-            self.tree_orcamentos.insert("", "end", values=valores, tags=(status,))
+            status = valores[5]  # coluna Status
 
+            # insere normalmente
+            item_id = self.tree_orcamentos.insert("", "end", values=valores)
 
-
+            # aplica a cor apenas no campo Status
+            self.tree_orcamentos.item(item_id, tags=(status,))
 
     def salvar_cliente(self):
             try:
