@@ -191,7 +191,7 @@ class SistemaPedidos:
         ttk.Button(btn_frame, text="Excluir", bootstyle=DANGER, command=self.excluir_cliente).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Importar Arquivo", bootstyle=WARNING, command=lambda: self.importar_dados("clientes")).pack(side='left', padx=5)
 
-        # --- Lista de clientes ---
+        # --- Lista de clientes ---nu
         list_frame = ttk.LabelFrame(frame, text="Clientes Cadastrados", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
@@ -199,7 +199,7 @@ class SistemaPedidos:
         self.tree_clientes = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
         for col in cols:
             self.tree_clientes.heading(col, text=col)
-            self.tree_clientes.column(col, width=140)
+            self.tree_clientes.column(col, width=140, anchor='center')
 
         scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.tree_clientes.yview)
         self.tree_clientes.configure(yscrollcommand=scrollbar.set)
@@ -357,7 +357,7 @@ class SistemaPedidos:
         self.tree_orcamentos = ttk.Treeview(list_frame, columns=cols, show="headings", height=12)
         for col in cols:
             self.tree_orcamentos.heading(col, text=col)
-            self.tree_orcamentos.column(col, width=140)
+            self.tree_orcamentos.column(col, width=140, anchor='center')
         self.tree_orcamentos.pack(fill="both", expand=True)
 
         # Configuração de cores só no texto do Status
@@ -544,11 +544,11 @@ class SistemaPedidos:
         for col in cols:
             self.tree_produtos.heading(col, text=col)
             if col in ('ID', 'ICMS%', 'IPI%', 'PIS/COFINS%'):
-                self.tree_produtos.column(col, width=80)
+                self.tree_produtos.column(col, width=80, anchor='center')
             elif col == 'Valor':
-                self.tree_produtos.column(col, width=100)
+                self.tree_produtos.column(col, width=100, anchor='center')
             else:
-                self.tree_produtos.column(col, width=160)
+                self.tree_produtos.column(col, width=160, anchor='center')
 
         scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.tree_produtos.yview)
         self.tree_produtos.configure(yscrollcommand=scrollbar.set)
@@ -740,16 +740,30 @@ class SistemaPedidos:
         tb.Button(top_frame, text="Adicionar Item", command=self.adicionar_item_pedido, bootstyle="success").grid(row=1, column=6, padx=5)
         tb.Button(top_frame, text="Remover Item", command=self.remover_item, bootstyle="danger").grid(row=1, column=7, padx=5)
 
-        # Itens
+       
         items_frame = tb.Labelframe(frame, text="Itens do Orçamento", padding=6, bootstyle="info")
         items_frame.pack(fill='both', expand=True, padx=10, pady=6)
 
         cols = ('Produto', 'Qtd', 'Valor Unit.', 'Total')
-        self.tree_pedido_items = tb.Treeview(items_frame, columns=cols, show='headings', height=9, bootstyle="info")
+        self.tree_pedido_items = tb.Treeview(
+            items_frame, columns=cols, show='headings', height=9, bootstyle="info"
+        )
+
         for col in cols:
             self.tree_pedido_items.heading(col, text=col)
-            self.tree_pedido_items.column(col, width=180)
-            self.tree_pedido_items.pack(fill='both', expand=True)
+            # Todas as colunas centralizadas e com largura proporcional
+            if col == 'Produto':
+                self.tree_pedido_items.column(col, width=300, anchor='center')
+            elif col == 'Qtd':
+                self.tree_pedido_items.column(col, width=80, anchor='center')
+            elif col == 'Valor Unit.':
+                self.tree_pedido_items.column(col, width=120, anchor='center')
+            elif col == 'Total':
+                self.tree_pedido_items.column(col, width=120, anchor='center')
+
+        self.tree_pedido_items.pack(fill='both', expand=True)
+
+
 
         # Totais + ações
         totals_frame = tb.Labelframe(frame, text="Totais & Ações", padding=6, bootstyle="warning")
