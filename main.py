@@ -17,6 +17,9 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import ttkbootstrap as tb
 from ttkbootstrap.constants import * 
+from ttkbootstrap.toast import ToastNotification
+from reportlab.platypus import Image
+from datetime import datetime
 import os
 
 def formatar_moeda(valor):
@@ -49,8 +52,6 @@ def normalizar_chave(texto):
     texto = texto.lower().replace(':', '').replace('%', '').replace('(', '').replace(')', '').strip()
     texto = texto.replace(' ', '_')
     return texto
-
-
 
 class SistemaPedidos:
     def __init__(self, root):
@@ -195,7 +196,7 @@ class SistemaPedidos:
 
         # feedback visual leve (toast)
         try:
-            from ttkbootstrap.toast import ToastNotification
+            
             ToastNotification(
                 title="Copiado!",
                 message=f"'{texto}' copiado para a área de transferência.",
@@ -1477,19 +1478,13 @@ class SistemaPedidos:
             # fallback se ainda estiver vazio
             if not cliente_nome:
                 cliente_nome = "cliente"
-
             # sanitizar nome (sem acentos/espacos estranhos)
             cliente_nome = unicodedata.normalize('NFKD', cliente_nome).encode('ASCII', 'ignore').decode('utf-8')
             cliente_nome = re.sub(r'[^a-zA-Z0-9_-]', '_', cliente_nome)
-
             # data no formato dd-mm-yy
-            from datetime import datetime
             data_str = datetime.now().strftime("%d-%m-%y")
-
             nome_sugerido = f"orcamento-{cliente_nome}-{data_str}.pdf"
-
             data_str = datetime.now().strftime("%d-%m-%y")
-
             nome_sugerido = f"orcamento-{cliente_nome}-{data_str}.pdf"
 
             # Montar PDF
@@ -1510,7 +1505,7 @@ class SistemaPedidos:
 
             # Logo da empresa
             try:
-                from reportlab.platypus import Image
+                
                 logo = Image("logo.png", width=120, height=30)  # ajuste conforme a sua logo
                 logo.hAlign = 'LEFT'
                 elementos.append(logo)
