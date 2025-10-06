@@ -50,6 +50,8 @@ def normalizar_chave(texto):
     texto = texto.replace(' ', '_')
     return texto
 
+
+
 class SistemaPedidos:
     def __init__(self, root):
         self.root = root
@@ -166,6 +168,42 @@ class SistemaPedidos:
             total_cofins += base * (cofins or 0) / 100
         total = subtotal + total_icms + total_ipi + total_pis + total_cofins
         return subtotal, total_icms, total_ipi, total_pis, total_cofins, total
+    def copiar_celula_treeview(self, event):
+        """Copia o conteúdo da célula selecionada da Treeview (Ctrl+C ou Ctrl+Duplo Clique)."""
+        tree = event.widget
+        sel = tree.selection()
+        if not sel:
+            return
+
+        item_id = sel[0]
+        valores = tree.item(item_id, "values")
+        if not valores:
+            return
+
+        # tenta pegar coluna atual
+        x, y = event.x, event.y
+        coluna_id = tree.identify_column(x)
+        try:
+            col_index = int(coluna_id.replace('#', '')) - 1
+        except:
+            col_index = 0
+
+        texto = str(valores[col_index])
+        self.root.clipboard_clear()
+        self.root.clipboard_append(texto)
+        self.root.update()
+
+        # feedback visual leve (toast)
+        try:
+            from ttkbootstrap.toast import ToastNotification
+            ToastNotification(
+                title="Copiado!",
+                message=f"'{texto}' copiado para a área de transferência.",
+                duration=1500,
+                bootstyle="info"
+            ).show_toast()
+        except Exception:
+            pass
 
     def criar_aba_clientes(self):
         frame = ttk.Frame(self.notebook)
@@ -205,6 +243,11 @@ class SistemaPedidos:
         self.tree_clientes.configure(yscrollcommand=scrollbar.set)
         self.tree_clientes.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
+
+                # Permitir copiar célula
+        self.tree_clientes.bind("<Control-c>", self.copiar_celula_treeview)
+        self.tree_clientes.bind("<Control-Double-1>", self.copiar_celula_treeview, add='+')
+
 
         # Duplo clique abre visualização
         self.tree_clientes.bind("<Double-1>", self.visualizar_cliente)
@@ -359,6 +402,11 @@ class SistemaPedidos:
             self.tree_orcamentos.heading(col, text=col)
             self.tree_orcamentos.column(col, width=140, anchor='center')
         self.tree_orcamentos.pack(fill="both", expand=True)
+
+        # Permitir copiar célula
+        self.tree_orcamentos.bind("<Control-c>", self.copiar_celula_treeview)
+        self.tree_orcamentos.bind("<Control-Double-1>", self.copiar_celula_treeview, add='+')
+
 
         # Configuração de cores só no texto do Status
         self.tree_orcamentos.tag_configure("Em Aberto", foreground="#B5EAF7")   # azul
@@ -554,6 +602,11 @@ class SistemaPedidos:
         self.tree_produtos.configure(yscrollcommand=scrollbar.set)
         self.tree_produtos.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
+
+                # Permitir copiar célula
+        self.tree_produtos.bind("<Control-c>", self.copiar_celula_treeview)
+        self.tree_produtos.bind("<Control-Double-1>", self.copiar_celula_treeview, add='+')
+
 
         self.carregar_produtos()
 
@@ -762,8 +815,6 @@ class SistemaPedidos:
                 self.tree_pedido_items.column(col, width=120, anchor='center')
 
         self.tree_pedido_items.pack(fill='both', expand=True)
-
-
 
         # Totais + ações
         totals_frame = tb.Labelframe(frame, text="Totais & Ações", padding=6, bootstyle="warning")
