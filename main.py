@@ -1476,6 +1476,7 @@ class SistemaPedidos:
                 ["Endereço:", endereco_formatado],
                 ["Representante:", representante],
                 ["Status:", status],
+                ["Validade do Orçamento:", f"{validade} dias"],
             ]
             t_info = Table(info_cliente, colWidths=[100, 380])
             estilo_tabela(t_info, header=False)
