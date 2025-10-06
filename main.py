@@ -289,22 +289,26 @@ class SistemaPedidos:
 
 
     def excluir_cliente(self):
-        item = self.tree_clientes.selection()
-        if not item:
-            messagebox.showwarning("Atenção", "Selecione um cliente para excluir.")
+        selecionados = self.tree_clientes.selection()
+        if not selecionados:
+            messagebox.showwarning("Atenção", "Selecione um ou mais clientes para excluir.")
             return
 
-        valores = self.tree_clientes.item(item[0], "values")
-        cliente_id = valores[0]
+        if not messagebox.askyesno("Confirmação", f"Deseja realmente excluir {len(selecionados)} cliente(s)?"):
+            return
 
-        if messagebox.askyesno("Confirmação", "Tem certeza que deseja excluir este cliente?"):
-            try:
+        try:
+            for item in selecionados:
+                valores = self.tree_clientes.item(item, "values")
+                cliente_id = valores[0]
                 self.cursor.execute("DELETE FROM clientes WHERE id=?", (cliente_id,))
-                self.conn.commit()
-                self.carregar_clientes()
-                messagebox.showinfo("Sucesso", "Cliente excluído com sucesso!")
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao excluir cliente: {e}")
+            
+            self.conn.commit()
+            self.carregar_clientes()
+            messagebox.showinfo("Sucesso", f"{len(selecionados)} cliente(s) excluído(s) com sucesso!")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao excluir: {e}")
+
    
     def criar_aba_consulta_orcamentos(self):
         frame = ttk.Frame(self.notebook)
@@ -642,20 +646,26 @@ class SistemaPedidos:
         if produto:
             self.abrir_formulario_produto(produto)
     def excluir_produto(self):
-        item = self.tree_produtos.selection()
-        if not item:
-            messagebox.showwarning("Atenção", "Selecione um produto para excluir.")
+        selecionados = self.tree_produtos.selection()
+        if not selecionados:
+            messagebox.showwarning("Atenção", "Selecione um ou mais produtos para excluir.")
             return
-        valores = self.tree_produtos.item(item[0], "values")
-        produto_id = valores[0]
-        if messagebox.askyesno("Confirmação", "Deseja realmente excluir este produto?"):
-            try:
+
+        if not messagebox.askyesno("Confirmação", f"Deseja realmente excluir {len(selecionados)} produto(s)?"):
+            return
+
+        try:
+            for item in selecionados:
+                valores = self.tree_produtos.item(item, "values")
+                produto_id = valores[0]
                 self.cursor.execute("DELETE FROM produtos WHERE id=?", (produto_id,))
-                self.conn.commit()
-                self.carregar_produtos()
-                messagebox.showinfo("Sucesso", "Produto excluído com sucesso!")
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao excluir produto: {e}")   
+            
+            self.conn.commit()
+            self.carregar_produtos()
+            messagebox.showinfo("Sucesso", f"{len(selecionados)} produto(s) excluído(s) com sucesso!")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao excluir produto(s): {e}")
+
 
     # ------------------- Pedidos/Orçamentos -------------------
 
