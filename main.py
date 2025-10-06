@@ -1915,7 +1915,7 @@ class SistemaPedidos:
                 self.conn.close()
 
 if __name__ == "__main__":
-    root = tb.Window(themename="superhero")
+    root = tb.Window(themename="solar")
     app = SistemaPedidos(root)
     root.mainloop()
     
