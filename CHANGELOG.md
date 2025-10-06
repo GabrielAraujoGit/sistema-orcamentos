@@ -7,6 +7,17 @@ Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## \[Unreleased\]
 
+## [1.3.1] - 06/Out/25
+
+### Added
+- Centralização visual aplicada a todas as tabelas (`Treeview`) do sistema.
+
+### Changed
+- Colunas das abas **Clientes**, **Produtos**, **Consultar Orçamentos**, **Itens do Orçamento** e **Visualização de Orçamento (popup)** agora exibem o conteúdo centralizado.
+- Melhoria geral na legibilidade e alinhamento das informações nas tabelas.
+
+---
+
 ## \[1.3.0\] - 02/Out/25
 
 ### Added
