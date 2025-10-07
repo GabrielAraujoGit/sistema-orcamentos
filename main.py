@@ -26,6 +26,30 @@ from reportlab.graphics.shapes import Drawing, Line
 from PIL import Image, ImageTk
 from reportlab.platypus import Table, TableStyle, Image as PDFImage, Paragraph, Spacer
 from reportlab.lib import colors
+import requests
+
+
+
+def formatar_cnpj(cnpj):
+    c = ''.join(filter(str.isdigit, str(cnpj)))
+    if len(c) == 14:
+        return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
+    return c
+
+def formatar_cep(cep):
+    c = ''.join(filter(str.isdigit, str(cep)))
+    if len(c) == 8:
+        return f"{c[:5]}-{c[5:]}"
+    return c
+
+def formatar_telefone(tel):
+    t = ''.join(filter(str.isdigit, str(tel)))
+    if len(t) == 11:
+        return f"({t[:2]}) {t[2:7]}-{t[7:]}"
+    elif len(t) == 10:
+        return f"({t[:2]}) {t[2:6]}-{t[6:]}"
+    return tel
+
 
 def formatar_moeda(valor):
     try:
@@ -264,7 +288,36 @@ class SistemaPedidos:
         self.tree_empresas.pack(fill="both", expand=True)
 
         self.carregar_empresas()        
+    
 
+    def buscar_cep(self, cep, entries):
+        """Busca endereço via API e preenche campos."""
+        cep = cep.strip().replace("-", "")
+        if len(cep) != 8 or not cep.isdigit():
+            messagebox.showwarning("CEP inválido", "Digite um CEP válido com 8 dígitos.")
+            return
+
+        try:
+            resposta = requests.get(f"https://viacep.com.br/ws/{cep}/json/")
+            if resposta.status_code == 200:
+                dados = resposta.json()
+                if "erro" in dados:
+                    messagebox.showwarning("Aviso", "CEP não encontrado.")
+                    return
+                # Preencher campos automaticamente
+                entries["endereco"].delete(0, tk.END)
+                entries["endereco"].insert(0, dados.get("logradouro", ""))
+                entries["cidade"].delete(0, tk.END)
+                entries["cidade"].insert(0, dados.get("localidade", ""))
+                entries["estado"].delete(0, tk.END)
+                entries["estado"].insert(0, dados.get("uf", ""))
+            else:
+                messagebox.showerror("Erro", "Não foi possível buscar o CEP.")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Erro ao buscar CEP: {e}")
+
+    
+    
     def criar_aba_clientes(self):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Clientes")
@@ -324,7 +377,7 @@ class SistemaPedidos:
         top.grid_columnconfigure(1, weight=1)
         top.grid_columnconfigure(3, weight=1)
 
-        labels = ['Razão Social:', 'CNPJ:', 'IE:', 'Endereço:', 'Cidade:', 'Estado:', 'CEP:', 'Telefone:', 'Email:']
+        labels = ['Nome:', 'CNPJ:', 'IE:', 'CEP:', 'Endereço:', 'Cidade:', 'Estado:', 'Telefone:', 'Email:']
         entries = {}
         for i, label in enumerate(labels):
             ttk.Label(top, text=label).grid(row=i//2, column=(i%2)*2, sticky='w', padx=5, pady=5)
@@ -335,7 +388,7 @@ class SistemaPedidos:
 
         # Se for edição, preencher os campos
         if cliente:
-            keys = ['id','razao_social','cnpj','ie','endereco','cidade','estado','cep','telefone','email']
+            keys = ['id','razao_social','cnpj','ie', 'cep', 'endereco','cidade','estado','telefone','email']
             for k, v in zip(keys, cliente):
                 if k in entries:
                     entries[k].insert(0, v or "")
@@ -353,17 +406,17 @@ class SistemaPedidos:
                 if cliente:  # editar
                     self.cursor.execute('''
                         UPDATE clientes
-                        SET razao_social=?, cnpj=?, ie=?, endereco=?, cidade=?, estado=?, cep=?, telefone=?, email=?
+                        SET razao_social=?, cnpj=?,cep=?, ie=?, endereco=?, cidade=?, estado=?, cep=?, telefone=?, email=?
                         WHERE id=?
-                    ''', (dados['razao_social'], dados['cnpj'], dados.get('ie'), dados.get('endereco'),
-                        dados.get('cidade'), dados.get('estado'), dados.get('cep'),
+                    ''', (dados['razao_social'], dados['cnpj'], dados.get('ie'),dados.get('cep'), dados.get('endereco'),
+                        dados.get('cidade'), dados.get('estado'),
                         dados.get('telefone'), dados.get('email'), cliente[0]))
                 else:  # novo
                     self.cursor.execute('''
-                        INSERT INTO clientes (razao_social, cnpj, ie, endereco, cidade, estado, cep, telefone, email)
+                        INSERT INTO clientes (razao_social, cnpj, ie, cep, endereco, cidade, estado, telefone, email)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (dados['razao_social'], dados['cnpj'], dados.get('ie'), dados.get('endereco'),
-                        dados.get('cidade'), dados.get('estado'), dados.get('cep'),
+                    ''', (dados['razao_social'], dados['cnpj'], dados.get('ie'),dados.get('cep'), dados.get('endereco'),
+                        dados.get('cidade'), dados.get('estado'),
                         dados.get('telefone'), dados.get('email')))
                 self.conn.commit()
                 self.carregar_clientes()
@@ -806,25 +859,19 @@ class SistemaPedidos:
     def criar_aba_pedidos(self):
         frame = tb.Frame(self.notebook)
         self.notebook.add(frame, text="Orçamentos")
-
         # Cabeçalho
         header_frame = tb.Labelframe(frame, text="Cabeçalho do Orçamento", padding=6, bootstyle="primary")
         header_frame.pack(fill='x', padx=10, pady=6)
-
         tb.Label(header_frame, text="Data do Orçamento:", bootstyle="inverse-primary").grid(row=0, column=0, sticky=W, padx=5)
         self.entry_data_orc = tb.Entry(header_frame, width=15)
         self.entry_data_orc.grid(row=0, column=1, padx=5)
         self.entry_data_orc.insert(0, datetime.now().strftime('%d/%m/%Y'))
-
         # campo do número do orçamento (só aparece em edição)
         self.label_numero_orc_lbl = tb.Label(header_frame, text="Nº do Orçamento:", bootstyle="inverse-primary")
         self.label_numero_orc = tb.Label(header_frame, text="", bootstyle="secondary")
-
-
         tb.Label(header_frame, text="Representante:", bootstyle="inverse-primary").grid(row=0, column=4, sticky=W, padx=5)
         self.entry_representante = tb.Entry(header_frame, width=25)
         self.entry_representante.grid(row=0, column=5, padx=5)
-
         # 👉 Campo de Status
         # criar mas não mostrar ainda
         self.label_status_orc = tb.Label(header_frame, text="Status:", bootstyle="inverse-primary")
@@ -838,44 +885,33 @@ class SistemaPedidos:
         # Informações Comerciais
         extra_frame = tb.Labelframe(frame, text="Informações Comerciais", padding=6, bootstyle="info")
         extra_frame.pack(fill='x', padx=10, pady=6)
-
         tb.Label(extra_frame, text="Condições de Pagamento:").grid(row=0, column=0, sticky=W, padx=5, pady=2)
         self.entry_cond_pag = tb.Entry(extra_frame, width=30)
         self.entry_cond_pag.grid(row=0, column=1, padx=5)
-
         tb.Label(extra_frame, text="Validade (dias):").grid(row=0, column=2, sticky=W, padx=5, pady=2)
         self.entry_validade = tb.Entry(extra_frame, width=10)
         self.entry_validade.grid(row=0, column=3, padx=5)
-
         tb.Label(extra_frame, text="Desconto (R$):").grid(row=1, column=0, sticky=W, padx=5, pady=2)
         self.entry_desconto = tb.Entry(extra_frame, width=15)
         self.entry_desconto.grid(row=1, column=1, padx=5)
-
         tb.Label(extra_frame, text="Observações:").grid(row=2, column=0, sticky=NW, padx=5, pady=2)
         self.text_obs = tk.Text(extra_frame, width=80, height=3)
         self.text_obs.grid(row=2, column=1, columnspan=3, padx=5, pady=2)
-
         # Seleção cliente / produto
         top_frame = tb.Labelframe(frame, text="Novo Item", padding=6, bootstyle="secondary")
         top_frame.pack(fill='x', padx=10, pady=6)
-
         tb.Label(top_frame, text="Cliente:").grid(row=0, column=0, sticky=W, padx=5)
         self.combo_cliente = tb.Combobox(top_frame, width=60)
         self.combo_cliente.grid(row=0, column=1, padx=5, columnspan=4)
-
         tb.Label(top_frame, text="Empresa (emissor):").grid(row=0, column=5, sticky=W, padx=5)
         self.combo_empresa = tb.Combobox(top_frame, width=45)
         self.combo_empresa.grid(row=0, column=6, padx=5, columnspan=2)
-
-
         tb.Label(top_frame, text="Produto:").grid(row=1, column=0, sticky=W, padx=5)
         self.combo_produto = tb.Combobox(top_frame, width=60, state='normal')
         self.combo_produto.grid(row=1, column=1, padx=5, columnspan=3)
-
         tb.Label(top_frame, text="Quantidade:").grid(row=1, column=4, sticky=W, padx=5)
         self.entry_qtd = tb.Entry(top_frame, width=8)
         self.entry_qtd.grid(row=1, column=5, padx=5)
-
         tb.Button(top_frame, text="Adicionar Item", command=self.adicionar_item_pedido, bootstyle="success").grid(row=1, column=6, padx=5)
         tb.Button(top_frame, text="Remover Item", command=self.remover_item, bootstyle="danger").grid(row=1, column=7, padx=5)
 
@@ -905,23 +941,18 @@ class SistemaPedidos:
         # Totais + ações
         totals_frame = tb.Labelframe(frame, text="Totais & Ações", padding=6, bootstyle="warning")
         totals_frame.pack(fill='x', padx=10, pady=6)
-
         self.label_subtotal = tb.Label(totals_frame, text="Subtotal: R$ 0,00", bootstyle="secondary")
         self.label_subtotal.grid(row=0, column=0, padx=8)
-
         self.label_impostos = tb.Label(totals_frame, text="Impostos: R$ 0,00", bootstyle="secondary")
         self.label_impostos.grid(row=0, column=1, padx=8)
-
         self.label_total = tb.Label(totals_frame, text="TOTAL: R$ 0,00",
                                     font=('Segoe UI', 11, 'bold'), bootstyle="success")
         self.label_total.grid(row=0, column=2, padx=8)
-
         self.btn_finalizar_pedido = tb.Button(
             totals_frame, text="Salvar Orçamento",
             command=self.finalizar_pedido, bootstyle="success"
         )
         self.btn_finalizar_pedido.grid(row=0, column=3, padx=8)
-
         tb.Button(
             totals_frame, text="Novo Orçamento",
             command=self.limpar_pedido, bootstyle="secondary"
@@ -976,9 +1007,6 @@ class SistemaPedidos:
         self.entry_desconto.insert(0, str(desconto or 0))
         self.text_obs.delete("1.0", tk.END)
         self.text_obs.insert("1.0", observacoes or "")
-
-       
-        
         self.label_status_orc.grid(row=0, column=6, sticky=W, padx=5)
         self.combo_status_orc.grid(row=0, column=7, padx=5)
         self.combo_status_orc.set(status or "Em Aberto")
@@ -986,7 +1014,6 @@ class SistemaPedidos:
         self.label_numero_orc_lbl.grid(row=0, column=2, sticky=W, padx=5)
         self.label_numero_orc.grid(row=0, column=3, padx=5)
         self.label_numero_orc.config(text=numero_pedido)
-
         # selecionar cliente no combo (formato: "id - nome")
         self.cursor.execute("SELECT razao_social FROM clientes WHERE id=?", (cliente_id,))
         cliente_nome = self.cursor.fetchone()
@@ -1312,7 +1339,6 @@ class SistemaPedidos:
         except:
             pass
 
-    
     def finalizar_pedido(self):
         if not self.combo_cliente.get() or not self.itens_pedido_temp:
             messagebox.showwarning("Atenção", "Selecione um cliente e adicione itens!")
@@ -1349,12 +1375,9 @@ class SistemaPedidos:
                 except:
                     empresa_id = None
 
-
             if hasattr(self, 'edicao_numero_pedido') and self.edicao_numero_pedido:
                 # === Atualizar pedido existente ===
                 status = self.combo_status_orc.get() or "Em Aberto"  # pega do combobox
-
-                
 
                 self.cursor.execute('''
                     UPDATE pedidos
@@ -1537,21 +1560,15 @@ class SistemaPedidos:
                 WHERE i.numero_pedido = ?
             ''', (numero_pedido,))
             itens = self.cursor.fetchall()
-
             # === Caminho do arquivo ===
             nome_pdf = f"orcamento-{cliente_nome.replace(' ', '_')}-{datetime.now().strftime('%d-%m-%y')}.pdf"
             caminho_pdf = os.path.join(os.getcwd(), nome_pdf)
-
             # === Criar documento ===
             doc = SimpleDocTemplate(caminho_pdf, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=30)
             story = []
             styles = getSampleStyleSheet()
             estilo_normal = styles["Normal"]
-
-            
-
             dados_cabecalho = []
-
             # Logo (se existir)
             logo_path = logo_emp if os.path.exists(logo_emp) else None
             if logo_path:
@@ -1640,15 +1657,11 @@ class SistemaPedidos:
             story.append(Paragraph("<b>Observações:</b>", styles["Heading5"]))
             story.append(Paragraph(observacoes or "Nenhuma", estilo_normal))
             story.append(Spacer(1, 30))
-
             # === Assinatura ===
             story.append(Spacer(1, 40))
             story.append(Paragraph("_____________________________________<br/>Assinatura do Representante", estilo_normal))
-
             # === Rodapé (opcional) ===
             story.append(Spacer(1, 25))
-            
-
             # === Gerar PDF ===
             doc.build(story)
 
@@ -1754,7 +1767,6 @@ class SistemaPedidos:
                         idx_ipi    = find_index('ipi')
                         idx_pis    = find_index('pis', 'pis/cofins', 'cofins')
                         idx_icms   = find_index('icms')
-
 
                         if idx_codigo is None or idx_desc is None or idx_valor is None:
                             messagebox.showerror("Erro de Coluna", "Arquivo de produtos precisa conter ao menos 'codigo', 'descricao' e 'preco/valor'.")
@@ -2001,102 +2013,69 @@ class SistemaPedidos:
         os.startfile(nome_arquivo)
 
     def abrir_formulario_empresa(self, empresa=None):
-        janela = tk.Toplevel(self.root)
-        janela.title("Cadastro de Empresa")
-        janela.geometry("700x500")
-        janela.grab_set()
+        top = tk.Toplevel(self.root)
+        top.title("Cadastro de Empresa")
+        top.geometry("650x420")
 
-        campos = [
-            ("Nome", "nome"), ("CNPJ", "cnpj"), ("IE", "ie"),
-            ("Endereço", "endereco"), ("Cidade", "cidade"), ("Estado", "estado"),
-            ("CEP", "cep"), ("Telefone", "telefone"), ("Email", "email")
-        ]
+        # Estrutura de campos
+        labels = ['Nome:', 'CNPJ:', 'IE:', 'CEP:', 'Endereço:', 'Cidade:', 'Estado:', 'Telefone:', 'Email:']
+        entries = {}
 
-        entradas = {}
-        for i, (rotulo, campo) in enumerate(campos):
-            ttk.Label(janela, text=rotulo + ":").grid(row=i, column=0, sticky="w", padx=8, pady=4)
-            entrada = ttk.Entry(janela, width=50)
-            entrada.grid(row=i, column=1, padx=8, pady=4)
-            entradas[campo] = entrada
+        for i, label in enumerate(labels):
+            ttk.Label(top, text=label).grid(row=i//2, column=(i%2)*2, sticky='w', padx=5, pady=5)
+            entry = ttk.Entry(top, width=28)
+            entry.grid(row=i//2, column=(i%2)*2+1, padx=5, pady=5, sticky="ew")
+            chave = normalizar_chave(label)
+            entries[chave] = entry
 
-        # === Campo de logo com botão de upload ===
-        ttk.Label(janela, text="Logo (arquivo PNG):").grid(row=len(campos), column=0, sticky="w", padx=8, pady=4)
-        entrada_logo = ttk.Entry(janela, width=50)
-        entrada_logo.grid(row=len(campos), column=1, padx=8, pady=4)
-        entradas["caminho_logo"] = entrada_logo
+        # 🔍 Busca automática do endereço pelo CEP
+        entry_cep = entries["cep"]
+        entry_cep.bind("<FocusOut>", lambda e: self.buscar_cep(entry_cep.get(), entries))
 
-        # pré-visualização da logo
-        lbl_preview = ttk.Label(janela, text="(sem logo selecionada)")
-        lbl_preview.grid(row=len(campos) + 1, column=1, pady=6)
-
-        def atualizar_preview_logo(caminho):
-            try:
-                img = Image.open(caminho).resize((150, 60))
-                preview = ImageTk.PhotoImage(img)
-                lbl_preview.config(image=preview, text="")
-                lbl_preview.image = preview
-            except:
-                lbl_preview.config(image="", text="(erro ao carregar imagem)")
-
-        def selecionar_logo():
-            caminho_arquivo = filedialog.askopenfilename(
-                title="Selecione a logo da empresa (PNG)",
-                filetypes=[("Imagens PNG", "*.png")]
-            )
-            if caminho_arquivo:
-                os.makedirs("logos", exist_ok=True)
-                nome_arquivo = os.path.basename(caminho_arquivo)
-                destino = os.path.join("logos", nome_arquivo)
-                try:
-                    shutil.copy(caminho_arquivo, destino)
-                    entrada_logo.delete(0, tk.END)
-                    entrada_logo.insert(0, destino)
-                    atualizar_preview_logo(destino)
-                    messagebox.showinfo("Logo adicionada", f"Logo copiada para: {destino}")
-                except Exception as e:
-                    messagebox.showerror("Erro", f"Não foi possível copiar a logo:\n{e}")
-
-        ttk.Button(janela, text="Selecionar Logo", command=selecionar_logo).grid(
-            row=len(campos), column=2, padx=5, pady=4
-        )
-
-        # === Se estiver editando uma empresa existente ===
+        # Preenche campos se for edição
         if empresa:
-            colunas = ["id", "nome", "cnpj", "ie", "endereco", "cidade", "estado", "cep", "telefone", "email", "caminho_logo"]
-            for idx, campo in enumerate(colunas[1:]):  # pula o id
-                entradas[campo].insert(0, empresa[idx + 1])
-            if empresa[-1]:
-                atualizar_preview_logo(empresa[-1])
+            keys = ['id', 'nome', 'cnpj', 'ie', 'cep', 'endereco', 'cidade', 'estado', 'telefone', 'email']
+            for k, v in zip(keys, empresa):
+                if k in entries:
+                    entries[k].insert(0, v or "")
 
-        # === Função de salvar ===
-        def salvar_empresa():
-            dados = {campo: entradas[campo].get().strip() for campo in entradas}
-            if not dados["nome"]:
-                messagebox.showwarning("Aviso", "O campo Nome é obrigatório.")
+        def salvar():
+            dados = {k: v.get().strip() for k, v in entries.items()}
+            campos_obrigatorios = {"nome": "Nome", "cnpj": "CNPJ"}
+            faltando = [nome for chave, nome in campos_obrigatorios.items() if not dados.get(chave)]
+
+            if faltando:
+                messagebox.showwarning("Atenção", f"Preencha os campos obrigatórios: {', '.join(faltando)}")
                 return
+
             try:
                 if empresa:
                     self.cursor.execute('''
                         UPDATE empresas
-                        SET nome=?, cnpj=?, ie=?, endereco=?, cidade=?, estado=?, cep=?, telefone=?, email=?, caminho_logo=?
+                        SET nome=?, cnpj=?, ie=?, cep=?, endereco=?, cidade=?, estado=?, telefone=?, email=?
                         WHERE id=?
-                    ''', (dados["nome"], dados["cnpj"], dados["ie"], dados["endereco"], dados["cidade"], dados["estado"],
-                        dados["cep"], dados["telefone"], dados["email"], dados["caminho_logo"], empresa[0]))
+                    ''', (
+                        dados['nome'], dados['cnpj'], dados.get('ie'), dados.get('cep'), dados.get('endereco'),
+                        dados.get('cidade'), dados.get('estado'), dados.get('telefone'), dados.get('email'), empresa[0]
+                    ))
                 else:
                     self.cursor.execute('''
-                        INSERT INTO empresas (nome, cnpj, ie, endereco, cidade, estado, cep, telefone, email, caminho_logo)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (dados["nome"], dados["cnpj"], dados["ie"], dados["endereco"], dados["cidade"], dados["estado"],
-                        dados["cep"], dados["telefone"], dados["email"], dados["caminho_logo"]))
+                        INSERT INTO empresas (nome, cnpj, ie, cep, endereco, cidade, estado, telefone, email)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        dados['nome'], dados['cnpj'], dados.get('ie'), dados.get('cep'), dados.get('endereco'),
+                        dados.get('cidade'), dados.get('estado'), dados.get('telefone'), dados.get('email')
+                    ))
                 self.conn.commit()
-                janela.destroy()
                 self.carregar_empresas()
-                self.carregar_combos_pedido()
-                messagebox.showinfo("Sucesso", "Empresa salva com sucesso!")
+                top.destroy()
+            except sqlite3.IntegrityError:
+                messagebox.showerror("Erro", "CNPJ já cadastrado!")
             except Exception as e:
-                messagebox.showerror("Erro", f"Falha ao salvar empresa:\n{e}")
+                messagebox.showerror("Erro", f"Erro ao salvar empresa: {e}")
 
-        ttk.Button(janela, text="Salvar", command=salvar_empresa).grid(row=len(campos) + 2, column=0, columnspan=3, pady=15)
+        ttk.Button(top, text="Salvar", bootstyle=SUCCESS, command=salvar).grid(row=6, column=0, columnspan=2, pady=10)
+
 
 
     def carregar_empresas(self):
@@ -2107,7 +2086,13 @@ class SistemaPedidos:
             pass
         self.cursor.execute("SELECT id, nome, cnpj, cidade, telefone FROM empresas")
         for row in self.cursor.fetchall():
-            self.tree_empresas.insert('', 'end', values=row)
+            id_, nome, cnpj, cidade, telefone = row
+
+            cnpj_fmt = formatar_cnpj(cnpj)
+            telefone_fmt = formatar_telefone(telefone)
+
+            self.tree_empresas.insert('', 'end', values=(id_, nome, cnpj_fmt, cidade, telefone_fmt))
+
 
     def editar_empresa(self):
         sel = self.tree_empresas.selection()
