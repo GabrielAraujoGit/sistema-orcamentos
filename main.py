@@ -1,37 +1,31 @@
+import os
+import re
+import csv
+import shutil
+import sqlite3
+import unicodedata
+from decimal import Decimal
+from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-import sqlite3
-from datetime import datetime
-import unicodedata
-import re
-from decimal import Decimal
-import csv
+import ttkbootstrap as tb
+from ttkbootstrap.constants import *
+from ttkbootstrap.toast import ToastNotification
 import openpyxl
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
-from openpyxl.drawing.image import Image
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-import ttkbootstrap as tb
-from ttkbootstrap.constants import * 
-from ttkbootstrap.toast import ToastNotification
-from reportlab.platypus import Image
-from datetime import datetime
-
-import os
+from openpyxl.drawing.image import Image as XLImage
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.platypus import (
-    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
-    )
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as PDFImage
+)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.graphics.shapes import Drawing, Line
-import unicodedata, re, os
-from datetime import datetime
-from tkinter import filedialog, messagebox
+from PIL import Image, ImageTk
+from reportlab.platypus import Table, TableStyle, Image as PDFImage, Paragraph, Spacer
+from reportlab.lib import colors
 
 def formatar_moeda(valor):
     try:
@@ -1489,9 +1483,14 @@ class SistemaPedidos:
             ttk.Button(top, text="Salvar", command=salvar).grid(row=6, column=0, columnspan=2, pady=10)
 
     # ------------------- Export PDF -------------------
-    def gerar_pdf_orcamento(self, numero_pedido):
+    def gerar_pdf_orcamento(self, numero_pedido=None):
         try:
-            # --- Buscar pedido completo ---
+            if not numero_pedido:
+                selecionado = self.tree_orcamentos.selection()
+                if not selecionado:
+                    messagebox.showwarning("Aviso", "Selecione um orçamento para gerar o PDF.")
+                    return
+                numero_pedido = self.tree_orcamentos.item(selecionado, 'values')[0]
             self.cursor.execute('''
                 SELECT p.numero_pedido, p.data_pedido, c.razao_social, c.cnpj, c.endereco, c.cidade, c.estado,
                     p.valor_produtos, p.valor_icms, p.valor_ipi, p.valor_pis, p.valor_cofins, 
@@ -1504,157 +1503,160 @@ class SistemaPedidos:
             pedido = self.cursor.fetchone()
 
             if not pedido:
-                messagebox.showerror("Erro", f"Orçamento {numero_pedido} não encontrado.")
+                messagebox.showerror("Erro", "Orçamento não encontrado.")
                 return
 
-            (
-                numero_pedido, data_pedido, cliente_nome, cliente_cnpj, cliente_endereco, cliente_cidade, cliente_estado,
-                valor_produtos, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_total, representante, condicoes_pagamento,
-                desconto, status, observacoes, validade, empresa_id
-            ) = pedido
+            (num, data, cliente_nome, cliente_cnpj, cliente_end, cliente_cid, cliente_est,
+            subtotal, icms, ipi, pis, cofins, total, representante, cond_pag, desconto,
+            status, observacoes, validade, empresa_id) = pedido
 
-            # --- Buscar empresa vinculada ---
+            # === Buscar dados da empresa emissora ===
             if empresa_id:
-                self.cursor.execute('''
-                    SELECT nome, cnpj, endereco, cidade, estado, email, telefone, caminho_logo
-                    FROM empresas WHERE id=?
-                ''', (empresa_id,))
+                self.cursor.execute("SELECT nome, cnpj, endereco, cidade, estado, telefone, email, caminho_logo FROM empresas WHERE id = ?", (empresa_id,))
                 emp = self.cursor.fetchone()
             else:
                 emp = None
 
-            # --- Se não houver empresa, usar padrão Eletrofrio ---
             if emp:
-                nome_emp, cnpj_emp, end_emp, cid_emp, est_emp, email_emp, tel_emp, caminho_logo = emp
+                nome_emp, cnpj_emp, end_emp, cid_emp, est_emp, tel_emp, email_emp, logo_emp = emp
             else:
                 nome_emp = "Eletrofrio Refrigeração Ltda."
                 cnpj_emp = "76.498.179/0001-10"
                 end_emp = "Rua João Chede, 1599 – CIC, Curitiba/PR, CEP 81170-220"
                 cid_emp = "Curitiba"
                 est_emp = "PR"
-                email_emp = "marketing@eletrofrio.com.br"
                 tel_emp = "(41) 2105-6000"
-                caminho_logo = "logo.png"
+                email_emp = "marketing@eletrofrio.com.br"
+                logo_emp = "logo.png"
 
-            # --- Buscar itens do pedido ---
+            # === Buscar itens do orçamento ===
             self.cursor.execute('''
-                SELECT pr.descricao, i.qtd, i.valor_unitario
+                SELECT pr.codigo, pr.descricao, i.qtd, i.valor_unitario
                 FROM pedido_itens i
-                JOIN produtos pr ON pr.id = i.produto_id
+                LEFT JOIN produtos pr ON i.produto_id = pr.id
                 WHERE i.numero_pedido = ?
             ''', (numero_pedido,))
             itens = self.cursor.fetchall()
 
-            if not itens:
-                messagebox.showwarning("Aviso", "Este orçamento não possui itens.")
-                return
+            # === Caminho do arquivo ===
+            nome_pdf = f"orcamento-{cliente_nome.replace(' ', '_')}-{datetime.now().strftime('%d-%m-%y')}.pdf"
+            caminho_pdf = os.path.join(os.getcwd(), nome_pdf)
 
-            # --- Criar PDF ---
-            pasta_saida = "orcamentos_pdf"
-            os.makedirs(pasta_saida, exist_ok=True)
-            arquivo_pdf = os.path.join(pasta_saida, f"Orcamento_{numero_pedido}.pdf")
+            # === Criar documento ===
+            doc = SimpleDocTemplate(caminho_pdf, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=30)
+            story = []
+            styles = getSampleStyleSheet()
+            estilo_normal = styles["Normal"]
 
-            doc = SimpleDocTemplate(arquivo_pdf, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=40)
-            estilos = getSampleStyleSheet()
-            elementos = []
+            
 
-            # --- Cabeçalho da empresa ---
-            try:
-                if caminho_logo and os.path.exists(caminho_logo):
-                    logo = Image(caminho_logo, width=100, height=40)
-                else:
-                    logo = Image("logo.png", width=100, height=40)
-            except:
-                logo = Paragraph(f"<b>{nome_emp}</b>", estilos["Title"])
+            dados_cabecalho = []
 
-            info_empresa = [
-                [logo, Paragraph(
-                    f"<b>{nome_emp}</b><br/>"
-                    f"CNPJ: {cnpj_emp or ''}<br/>"
-                    f"Endereço: {end_emp or ''} {', ' + cid_emp if cid_emp else ''} {('- ' + est_emp) if est_emp else ''}<br/>"
-                    f"E-mail: {email_emp or ''} | {tel_emp or ''}",
-                    estilos["Normal"]
-                )]
-            ]
-            tabela_empresa = Table(info_empresa, colWidths=[120, 400])
-            tabela_empresa.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'TOP')
-            ]))
-            elementos.append(tabela_empresa)
-            elementos.append(Spacer(1, 10))
+            # Logo (se existir)
+            logo_path = logo_emp if os.path.exists(logo_emp) else None
+            if logo_path:
+                img = PDFImage(logo_path, width=120, height=50)
+            else:
+                img = Paragraph("<b>Sem Logo</b>", estilo_normal)
 
-            # --- Título e dados do cliente ---
-            elementos.append(Paragraph(f"<b>ORÇAMENTO Nº {numero_pedido}</b>", estilos["Heading2"]))
-            elementos.append(Paragraph(f"Data: {data_pedido}", estilos["Normal"]))
-            elementos.append(Spacer(1, 8))
-
-            info_cliente = f"""
-            <b>Cliente:</b> {cliente_nome or ''}<br/>
-            <b>CNPJ:</b> {cliente_cnpj or ''}<br/>
-            <b>Endereço:</b> {cliente_endereco or ''} - {cliente_cidade or ''}/{cliente_estado or ''}<br/>
-            <b>Representante:</b> {representante or ''}<br/>
-            <b>Condições de Pagamento:</b> {condicoes_pagamento or ''}<br/>
-            <b>Validade:</b> {validade or ''}<br/>
+            info_empresa = f"""
+            <b>{nome_emp}</b><br/>
+            CNPJ: {cnpj_emp}<br/>
+            {end_emp}, {cid_emp} - {est_emp}<br/>
+            {email_emp} | {tel_emp}
             """
-            elementos.append(Paragraph(info_cliente, estilos["Normal"]))
-            elementos.append(Spacer(1, 10))
+            dados_cabecalho.append([img, Paragraph(info_empresa, estilo_normal)])
 
-            # --- Tabela de itens ---
-            dados_itens = [["Descrição", "Qtd", "V. Unitário (R$)", "Subtotal (R$)"]]
-            for desc, qtd, valor_unit in itens:
-                subtotal_item = qtd * valor_unit
-                dados_itens.append([
-                    desc,
-                    f"{qtd:.2f}",
-                    f"{valor_unit:,.2f}",
-                    f"{subtotal_item:,.2f}"
+            tabela_cab = Table(dados_cabecalho, colWidths=[130, 350])
+            tabela_cab.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("TOPPADDING", (0, 0), (-1, -1), 10),
+                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+            ]))
+            story.append(tabela_cab)
+            story.append(Spacer(1, 10))
+            story.append(Table([[""]], colWidths=[500], style=[("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.grey)]))
+            story.append(Spacer(1, 10))
+
+            # === Dados do orçamento ===
+            dados_orc = f"""
+            <b>ORÇAMENTO Nº:</b> {num} &nbsp;&nbsp;&nbsp;&nbsp; <b>Data:</b> {data}<br/>
+            <b>Cliente:</b> {cliente_nome}<br/>
+            <b>CNPJ:</b> {cliente_cnpj}<br/>
+            <b>Endereço:</b> {cliente_end}, {cliente_cid} - {cliente_est}<br/>
+            <b>Representante:</b> {representante} &nbsp;&nbsp;&nbsp;&nbsp; <b>Status:</b> {status}<br/>
+            <b>Validade:</b> {validade or '-'} dias &nbsp;&nbsp;&nbsp;&nbsp; <b>Pagamento:</b> {cond_pag or '-'}
+
+            """
+            story.append(Paragraph(dados_orc, estilo_normal))
+            story.append(Spacer(1, 10))
+
+            # === Tabela de itens ===
+            cabecalho = ["Código", "Descrição", "Qtd", "V. Unitário", "Total"]
+            linhas = [cabecalho]
+            for cod, desc, qtd, valor in itens:
+                total_item = float(qtd) * float(valor)
+                linhas.append([
+                    cod,
+                    Paragraph(desc, estilo_normal),
+                    f"{qtd:.0f}",
+                    f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                    f"R$ {total_item:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
                 ])
 
-            tabela_itens = Table(dados_itens, colWidths=[280, 60, 90, 90])
-            tabela_itens.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#cccccc')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-                ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            tabela = Table(linhas, colWidths=[70, 240, 50, 80, 80])
+            tabela.setStyle(TableStyle([
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ]))
-            elementos.append(tabela_itens)
-            elementos.append(Spacer(1, 10))
+            story.append(tabela)
+            story.append(Spacer(1, 15))
 
-            # --- Totais ---
-            resumo = [
-                ["Subtotal", f"R$ {valor_produtos:,.2f}"],
-                ["ICMS", f"R$ {valor_icms:,.2f}"],
-                ["IPI", f"R$ {valor_ipi:,.2f}"],
-                ["PIS", f"R$ {valor_pis:,.2f}"],
-                ["COFINS", f"R$ {valor_cofins:,.2f}"],
-                ["Desconto", f"R$ {desconto or 0:,.2f}"],
-                ["Total Geral", f"R$ {valor_total:,.2f}"]
+            # === Totais ===
+            dados_totais = [
+                ["Subtotal:", f"R$ {subtotal:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["ICMS:", f"R$ {icms:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["IPI:", f"R$ {ipi:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["PIS:", f"R$ {pis:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["COFINS:", f"R$ {cofins:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["Desconto:", f"R$ {desconto:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["", ""],
+                ["Total Geral:", f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
             ]
-            tabela_totais = Table(resumo, colWidths=[380, 140], hAlign='RIGHT')
+            tabela_totais = Table(dados_totais, colWidths=[400, 100], hAlign="RIGHT")
             tabela_totais.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
-                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#eeeeee")),
-                ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.grey),
-                ('BOX', (0, 0), (-1, -1), 0.25, colors.grey)
+                ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+                ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("LINEABOVE", (0, -1), (-1, -1), 0.5, colors.black),
+                ("TOPPADDING", (0, -1), (-1, -1), 6),
             ]))
-            elementos.append(tabela_totais)
+            story.append(tabela_totais)
+            story.append(Spacer(1, 20))
 
-            # --- Observações ---
-            if observacoes:
-                elementos.append(Spacer(1, 10))
-                elementos.append(Paragraph("<b>Observações:</b>", estilos["Heading4"]))
-                elementos.append(Paragraph(observacoes, estilos["Normal"]))
+            # === Observações ===
+            story.append(Paragraph("<b>Observações:</b>", styles["Heading5"]))
+            story.append(Paragraph(observacoes or "Nenhuma", estilo_normal))
+            story.append(Spacer(1, 30))
 
-            # --- Geração ---
-            doc.build(elementos)
-            os.startfile(arquivo_pdf)
-            messagebox.showinfo("PDF Gerado", f"Orçamento {numero_pedido} salvo em:\n{arquivo_pdf}")
+            # === Assinatura ===
+            story.append(Spacer(1, 40))
+            story.append(Paragraph("_____________________________________<br/>Assinatura do Representante", estilo_normal))
+
+            # === Rodapé (opcional) ===
+            story.append(Spacer(1, 25))
+            
+
+            # === Gerar PDF ===
+            doc.build(story)
+
+            messagebox.showinfo("Sucesso", f"PDF gerado com sucesso:\n{caminho_pdf}")
+            os.startfile(caminho_pdf)
 
         except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao gerar PDF: {e}")
+            messagebox.showerror("Erro", f"Erro ao gerar PDF:\n{e}")
 
 
     def importar_dados(self, tipo="clientes"):
@@ -2001,13 +2003,13 @@ class SistemaPedidos:
     def abrir_formulario_empresa(self, empresa=None):
         janela = tk.Toplevel(self.root)
         janela.title("Cadastro de Empresa")
-        janela.geometry("600x400")
+        janela.geometry("700x500")
         janela.grab_set()
 
         campos = [
             ("Nome", "nome"), ("CNPJ", "cnpj"), ("IE", "ie"),
             ("Endereço", "endereco"), ("Cidade", "cidade"), ("Estado", "estado"),
-            ("CEP", "cep"), ("Telefone", "telefone"), ("Email", "email"), ("Logo (caminho)", "caminho_logo")
+            ("CEP", "cep"), ("Telefone", "telefone"), ("Email", "email")
         ]
 
         entradas = {}
@@ -2017,36 +2019,84 @@ class SistemaPedidos:
             entrada.grid(row=i, column=1, padx=8, pady=4)
             entradas[campo] = entrada
 
+        # === Campo de logo com botão de upload ===
+        ttk.Label(janela, text="Logo (arquivo PNG):").grid(row=len(campos), column=0, sticky="w", padx=8, pady=4)
+        entrada_logo = ttk.Entry(janela, width=50)
+        entrada_logo.grid(row=len(campos), column=1, padx=8, pady=4)
+        entradas["caminho_logo"] = entrada_logo
+
+        # pré-visualização da logo
+        lbl_preview = ttk.Label(janela, text="(sem logo selecionada)")
+        lbl_preview.grid(row=len(campos) + 1, column=1, pady=6)
+
+        def atualizar_preview_logo(caminho):
+            try:
+                img = Image.open(caminho).resize((150, 60))
+                preview = ImageTk.PhotoImage(img)
+                lbl_preview.config(image=preview, text="")
+                lbl_preview.image = preview
+            except:
+                lbl_preview.config(image="", text="(erro ao carregar imagem)")
+
+        def selecionar_logo():
+            caminho_arquivo = filedialog.askopenfilename(
+                title="Selecione a logo da empresa (PNG)",
+                filetypes=[("Imagens PNG", "*.png")]
+            )
+            if caminho_arquivo:
+                os.makedirs("logos", exist_ok=True)
+                nome_arquivo = os.path.basename(caminho_arquivo)
+                destino = os.path.join("logos", nome_arquivo)
+                try:
+                    shutil.copy(caminho_arquivo, destino)
+                    entrada_logo.delete(0, tk.END)
+                    entrada_logo.insert(0, destino)
+                    atualizar_preview_logo(destino)
+                    messagebox.showinfo("Logo adicionada", f"Logo copiada para: {destino}")
+                except Exception as e:
+                    messagebox.showerror("Erro", f"Não foi possível copiar a logo:\n{e}")
+
+        ttk.Button(janela, text="Selecionar Logo", command=selecionar_logo).grid(
+            row=len(campos), column=2, padx=5, pady=4
+        )
+
+        # === Se estiver editando uma empresa existente ===
         if empresa:
-            # Pré-carrega dados no formulário
             colunas = ["id", "nome", "cnpj", "ie", "endereco", "cidade", "estado", "cep", "telefone", "email", "caminho_logo"]
             for idx, campo in enumerate(colunas[1:]):  # pula o id
-                entradas[campo].insert(0, empresa[idx+1])
+                entradas[campo].insert(0, empresa[idx + 1])
+            if empresa[-1]:
+                atualizar_preview_logo(empresa[-1])
 
+        # === Função de salvar ===
         def salvar_empresa():
             dados = {campo: entradas[campo].get().strip() for campo in entradas}
             if not dados["nome"]:
                 messagebox.showwarning("Aviso", "O campo Nome é obrigatório.")
                 return
-            if empresa:
-                self.cursor.execute('''
-                    UPDATE empresas
-                    SET nome=?, cnpj=?, ie=?, endereco=?, cidade=?, estado=?, cep=?, telefone=?, email=?, caminho_logo=?
-                    WHERE id=?
-                ''', (dados["nome"], dados["cnpj"], dados["ie"], dados["endereco"], dados["cidade"], dados["estado"],
-                    dados["cep"], dados["telefone"], dados["email"], dados["caminho_logo"], empresa[0]))
-            else:
-                self.cursor.execute('''
-                    INSERT INTO empresas (nome, cnpj, ie, endereco, cidade, estado, cep, telefone, email, caminho_logo)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (dados["nome"], dados["cnpj"], dados["ie"], dados["endereco"], dados["cidade"], dados["estado"],
-                    dados["cep"], dados["telefone"], dados["email"], dados["caminho_logo"]))
-            self.conn.commit()
-            janela.destroy()
-            self.carregar_empresas()
-            self.carregar_combos_pedido()  # atualiza lista de empresas na aba orçamentos
+            try:
+                if empresa:
+                    self.cursor.execute('''
+                        UPDATE empresas
+                        SET nome=?, cnpj=?, ie=?, endereco=?, cidade=?, estado=?, cep=?, telefone=?, email=?, caminho_logo=?
+                        WHERE id=?
+                    ''', (dados["nome"], dados["cnpj"], dados["ie"], dados["endereco"], dados["cidade"], dados["estado"],
+                        dados["cep"], dados["telefone"], dados["email"], dados["caminho_logo"], empresa[0]))
+                else:
+                    self.cursor.execute('''
+                        INSERT INTO empresas (nome, cnpj, ie, endereco, cidade, estado, cep, telefone, email, caminho_logo)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (dados["nome"], dados["cnpj"], dados["ie"], dados["endereco"], dados["cidade"], dados["estado"],
+                        dados["cep"], dados["telefone"], dados["email"], dados["caminho_logo"]))
+                self.conn.commit()
+                janela.destroy()
+                self.carregar_empresas()
+                self.carregar_combos_pedido()
+                messagebox.showinfo("Sucesso", "Empresa salva com sucesso!")
+            except Exception as e:
+                messagebox.showerror("Erro", f"Falha ao salvar empresa:\n{e}")
 
-        ttk.Button(janela, text="Salvar", command=salvar_empresa).grid(row=len(campos), column=0, columnspan=2, pady=10)
+        ttk.Button(janela, text="Salvar", command=salvar_empresa).grid(row=len(campos) + 2, column=0, columnspan=3, pady=15)
 
 
     def carregar_empresas(self):
