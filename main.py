@@ -20,7 +20,18 @@ from ttkbootstrap.constants import *
 from ttkbootstrap.toast import ToastNotification
 from reportlab.platypus import Image
 from datetime import datetime
+
 import os
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.platypus import (
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+    )
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.graphics.shapes import Drawing, Line
+import unicodedata, re, os
+from datetime import datetime
+from tkinter import filedialog, messagebox
 
 def formatar_moeda(valor):
     try:
@@ -74,6 +85,7 @@ class SistemaPedidos:
         self.criar_aba_produtos()
         self.criar_aba_pedidos()
         self.criar_aba_consulta_orcamentos()
+        self.criar_aba_empresas()
         self.edicao_numero_pedido = None
 
          # Atalhos de teclado
@@ -98,6 +110,15 @@ class SistemaPedidos:
                 email TEXT
             )
         ''')
+
+        # Garantir que a coluna empresa_id existe na tabela pedidos
+        try:
+            self.cursor.execute("ALTER TABLE pedidos ADD COLUMN empresa_id INTEGER")
+            self.conn.commit()
+        except Exception:
+            # se já existir, ignora o erro
+            pass
+
         # produtos
         # produtos
         self.cursor.execute('''
@@ -115,6 +136,25 @@ class SistemaPedidos:
                 aliq_cofins REAL DEFAULT 0
             )
         ''')
+
+        # empresas (empresas que emitem orçamentos)
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS empresas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                cnpj TEXT UNIQUE,
+                ie TEXT,
+                endereco TEXT,
+                cidade TEXT,
+                estado TEXT,
+                cep TEXT,
+                telefone TEXT,
+                email TEXT,
+                caminho_logo TEXT,
+                eh_padrao INTEGER DEFAULT 0
+            )
+        ''')
+
 
         # pedidos
         # pedidos
@@ -205,6 +245,31 @@ class SistemaPedidos:
             ).show_toast()
         except Exception:
             pass
+
+    def criar_aba_empresas(self):
+        aba = ttk.Frame(self.notebook)
+        self.notebook.add(aba, text="Empresas")
+
+        # Botões de ação
+        frame_botoes = ttk.Frame(aba)
+        frame_botoes.pack(fill="x", padx=10, pady=5)
+
+        ttk.Button(frame_botoes, text="Adicionar", command=self.adicionar_empresa).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, text="Editar", command=self.editar_empresa).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, text="Excluir", command=self.excluir_empresa).pack(side="left", padx=5)
+
+        # Lista de empresas
+        frame_lista = ttk.Frame(aba)
+        frame_lista.pack(fill="both", expand=True, padx=10, pady=10)
+
+        colunas = ("ID", "Nome", "CNPJ", "Cidade", "Telefone")
+        self.tree_empresas = ttk.Treeview(frame_lista, columns=colunas, show="headings")
+        for col in colunas:
+            self.tree_empresas.heading(col, text=col)
+            self.tree_empresas.column(col, width=150, anchor="center")
+        self.tree_empresas.pack(fill="both", expand=True)
+
+        self.carregar_empresas()        
 
     def criar_aba_clientes(self):
         frame = ttk.Frame(self.notebook)
@@ -315,6 +380,27 @@ class SistemaPedidos:
                 messagebox.showerror("Erro", f"Erro ao salvar cliente: {e}")
 
         ttk.Button(top, text="Salvar", command=salvar).grid(row=6, column=0, columnspan=2, pady=10)
+    def criar_aba_empresas(self):
+            frame = ttk.Frame(self.notebook)
+            self.notebook.add(frame, text="Empresas")
+
+            # botões
+            btn_frame = ttk.Frame(frame)
+            btn_frame.pack(fill='x', padx=10, pady=5)
+            ttk.Button(btn_frame, text="Adicionar", bootstyle=SUCCESS, command=self.abrir_formulario_empresa).pack(side='left', padx=5)
+            ttk.Button(btn_frame, text="Editar", bootstyle=INFO, command=self.editar_empresa).pack(side='left', padx=5)
+            ttk.Button(btn_frame, text="Excluir", bootstyle=DANGER, command=self.excluir_empresa).pack(side='left', padx=5)
+
+            # lista
+            list_frame = ttk.LabelFrame(frame, text="Empresas Cadastradas", padding=10)
+            list_frame.pack(fill='both', expand=True, padx=10, pady=10)
+            cols = ('ID','Nome','CNPJ','Cidade','Telefone')
+            self.tree_empresas = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
+            for col in cols:
+                self.tree_empresas.heading(col, text=col)
+                self.tree_empresas.column(col, width=160, anchor='center')
+            self.tree_empresas.pack(fill='both', expand=True)
+            self.carregar_empresas()
 
     def adicionar_cliente(self):
         self.abrir_formulario_cliente()
@@ -783,6 +869,11 @@ class SistemaPedidos:
         self.combo_cliente = tb.Combobox(top_frame, width=60)
         self.combo_cliente.grid(row=0, column=1, padx=5, columnspan=4)
 
+        tb.Label(top_frame, text="Empresa (emissor):").grid(row=0, column=5, sticky=W, padx=5)
+        self.combo_empresa = tb.Combobox(top_frame, width=45)
+        self.combo_empresa.grid(row=0, column=6, padx=5, columnspan=2)
+
+
         tb.Label(top_frame, text="Produto:").grid(row=1, column=0, sticky=W, padx=5)
         self.combo_produto = tb.Combobox(top_frame, width=60, state='normal')
         self.combo_produto.grid(row=1, column=1, padx=5, columnspan=3)
@@ -976,6 +1067,11 @@ class SistemaPedidos:
         self.cursor.execute('SELECT id, codigo, descricao FROM produtos')
         produtos = [f"{row[0]} - {row[1]} - {row[2]}" for row in self.cursor.fetchall()]
         self.combo_produto['values'] = produtos
+        # carregar empresas
+        self.cursor.execute('SELECT id, nome FROM empresas')
+        empresas = [f"{row[0]} - {row[1]}" for row in self.cursor.fetchall()]
+        self.combo_empresa['values'] = empresas
+
     def filtrar_clientes(self, event=None):
         texto = self.combo_cliente.get().lower()
         self.cursor.execute('SELECT id, razao_social FROM clientes')
@@ -1252,17 +1348,27 @@ class SistemaPedidos:
 
             total_final = total - desconto
 
+            empresa_id = None
+            if self.combo_empresa.get():
+                try:
+                    empresa_id = int(self.combo_empresa.get().split(' - ')[0])
+                except:
+                    empresa_id = None
+
+
             if hasattr(self, 'edicao_numero_pedido') and self.edicao_numero_pedido:
                 # === Atualizar pedido existente ===
                 status = self.combo_status_orc.get() or "Em Aberto"  # pega do combobox
 
+                
+
                 self.cursor.execute('''
                     UPDATE pedidos
                     SET data_pedido=?, cliente_id=?, valor_produtos=?, valor_icms=?, valor_ipi=?, valor_pis=?, valor_cofins=?, valor_total=?,
-                        representante=?, condicoes_pagamento=?, desconto=?, status=?, observacoes=?, validade=?
+                        representante=?, condicoes_pagamento=?, desconto=?, status=?, observacoes=?, validade=?, empresa_id=?
                     WHERE numero_pedido=?
                 ''', (data_pedido, cliente_id, subtotal, total_icms, total_ipi, total_pis, total_cofins, total_final,
-                    representante, cond_pag, desconto, status, observacoes, validade, numero_pedido))
+                    representante, cond_pag, desconto, status, observacoes, validade, numero_pedido, empresa_id))
 
                 # remover itens antigos e inserir os novos
                 self.cursor.execute('DELETE FROM pedido_itens WHERE numero_pedido = ?', (numero_pedido,))
@@ -1285,10 +1391,10 @@ class SistemaPedidos:
                 self.cursor.execute('''
                     INSERT INTO pedidos 
                     (numero_pedido, data_pedido, cliente_id, valor_produtos, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_total, representante,
-                    condicoes_pagamento, desconto, status, observacoes, validade)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    condicoes_pagamento, desconto, status, observacoes, validade, empresa_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (numero_pedido, data_pedido, cliente_id, subtotal, total_icms, total_ipi, total_pis, total_cofins, total_final,
-                    representante, cond_pag, desconto, "Em Aberto", observacoes, validade))
+                    representante, cond_pag, desconto, "Em Aberto", observacoes, validade, empresa_id))
 
                 for item in self.itens_pedido_temp:
                     self.cursor.execute('''
@@ -1383,238 +1489,173 @@ class SistemaPedidos:
             ttk.Button(top, text="Salvar", command=salvar).grid(row=6, column=0, columnspan=2, pady=10)
 
     # ------------------- Export PDF -------------------
-    def gerar_pdf_orcamento(self, numero_pedido=None):
+    def gerar_pdf_orcamento(self, numero_pedido):
         try:
-            # Se o botão chamar sem argumento, pega do label
-            if numero_pedido is None:
-                numero_pedido = self.label_numero_orc.cget("text")
-
-            # -------- Padronização de tabelas --------
-            COR_CABECALHO = colors.HexColor("#1E3A8A")  # Azul escuro
-            COR_TEXTO_CAB = colors.white
-            COR_GRID = colors.HexColor("#D1D5DB")
-
-            def estilo_tabela(tabela, header=True):
-                estilos = [
-                    ("GRID", (0, 0), (-1, -1), 0.5, COR_GRID),
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),         
-                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ]
-                if header:
-                    estilos += [
-                        ("BACKGROUND", (0, 0), (-1, 0), COR_CABECALHO),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), COR_TEXTO_CAB),
-                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ]
-                tabela.setStyle(TableStyle(estilos))
-                return tabela
-
-            # Buscar dados do pedido principal
+            # --- Buscar pedido completo ---
             self.cursor.execute('''
-                SELECT p.data_pedido, c.razao_social, c.cnpj, c.endereco, c.cidade, c.estado,
-                    p.valor_produtos, p.valor_icms, p.valor_ipi, p.valor_pis, p.valor_cofins, p.valor_total,
-                    p.representante, p.condicoes_pagamento, p.desconto, p.status, p.observacoes, p.validade
+                SELECT p.numero_pedido, p.data_pedido, c.razao_social, c.cnpj, c.endereco, c.cidade, c.estado,
+                    p.valor_produtos, p.valor_icms, p.valor_ipi, p.valor_pis, p.valor_cofins, 
+                    p.valor_total, p.representante, p.condicoes_pagamento, p.desconto, p.status,
+                    p.observacoes, p.validade, p.empresa_id
                 FROM pedidos p
-                JOIN clientes c ON p.cliente_id = c.id
+                LEFT JOIN clientes c ON p.cliente_id = c.id
                 WHERE p.numero_pedido = ?
             ''', (numero_pedido,))
             pedido = self.cursor.fetchone()
+
             if not pedido:
-                messagebox.showerror("Erro", "Pedido não encontrado no banco.")
+                messagebox.showerror("Erro", f"Orçamento {numero_pedido} não encontrado.")
                 return
 
-            (data_pedido, razao_social, cnpj, endereco, cidade, estado,
-            subtotal, total_icms, total_ipi, total_pis, total_cofins, total,
-            representante, cond_pag, desconto, status, observacoes, validade) = pedido
+            (
+                numero_pedido, data_pedido, cliente_nome, cliente_cnpj, cliente_endereco, cliente_cidade, cliente_estado,
+                valor_produtos, valor_icms, valor_ipi, valor_pis, valor_cofins, valor_total, representante, condicoes_pagamento,
+                desconto, status, observacoes, validade, empresa_id
+            ) = pedido
 
-            # Garantir que não existam valores None
-            subtotal = subtotal or 0.0
-            total_icms = total_icms or 0.0
-            total_ipi = total_ipi or 0.0
-            total_pis = total_pis or 0.0
-            total_cofins = total_cofins or 0.0
-            total = total or 0.0
-            desconto = desconto or 0.0
-            cond_pag = cond_pag or ""
-            observacoes = observacoes or ""
-            validade = validade or ""
-            representante = representante or ""
-            status = status or "Em Aberto"
+            # --- Buscar empresa vinculada ---
+            if empresa_id:
+                self.cursor.execute('''
+                    SELECT nome, cnpj, endereco, cidade, estado, email, telefone, caminho_logo
+                    FROM empresas WHERE id=?
+                ''', (empresa_id,))
+                emp = self.cursor.fetchone()
+            else:
+                emp = None
 
-            # Buscar itens do pedido
+            # --- Se não houver empresa, usar padrão Eletrofrio ---
+            if emp:
+                nome_emp, cnpj_emp, end_emp, cid_emp, est_emp, email_emp, tel_emp, caminho_logo = emp
+            else:
+                nome_emp = "Eletrofrio Refrigeração Ltda."
+                cnpj_emp = "76.498.179/0001-10"
+                end_emp = "Rua João Chede, 1599 – CIC, Curitiba/PR, CEP 81170-220"
+                cid_emp = "Curitiba"
+                est_emp = "PR"
+                email_emp = "marketing@eletrofrio.com.br"
+                tel_emp = "(41) 2105-6000"
+                caminho_logo = "logo.png"
+
+            # --- Buscar itens do pedido ---
             self.cursor.execute('''
-                SELECT pr.codigo, pr.descricao, pi.qtd, pi.valor_unitario
-                FROM pedido_itens pi
-                JOIN produtos pr ON pi.produto_id = pr.id
-                WHERE pi.numero_pedido = ?
+                SELECT pr.descricao, i.qtd, i.valor_unitario
+                FROM pedido_itens i
+                JOIN produtos pr ON pr.id = i.produto_id
+                WHERE i.numero_pedido = ?
             ''', (numero_pedido,))
-            produtos = self.cursor.fetchall()
+            itens = self.cursor.fetchall()
 
-           
-            # --- pegar nome do cliente para o nome do arquivo ---
-            cliente_nome = None
+            if not itens:
+                messagebox.showwarning("Aviso", "Este orçamento não possui itens.")
+                return
 
-            # tenta pegar do combo
-            if self.combo_cliente.get():
-                try:
-                    cliente_nome = self.combo_cliente.get().split(" - ", 1)[1]
-                except:
-                    cliente_nome = self.combo_cliente.get()
+            # --- Criar PDF ---
+            pasta_saida = "orcamentos_pdf"
+            os.makedirs(pasta_saida, exist_ok=True)
+            arquivo_pdf = os.path.join(pasta_saida, f"Orcamento_{numero_pedido}.pdf")
 
-            # se ainda não tiver nome, busca pelo numero do pedido
-            if not cliente_nome:
-                numero_pedido = self.label_numero_orc.cget("text") if self.label_numero_orc.cget("text") else self.edicao_numero_pedido
-                if numero_pedido:
-                    self.cursor.execute("""
-                        SELECT c.razao_social 
-                        FROM pedidos p
-                        JOIN clientes c ON p.cliente_id = c.id
-                        WHERE p.numero_pedido = ?
-                    """, (numero_pedido,))
-                    row = self.cursor.fetchone()
-                    if row:
-                        cliente_nome = row[0]
-
-            # fallback se ainda estiver vazio
-            if not cliente_nome:
-                cliente_nome = "cliente"
-            # sanitizar nome (sem acentos/espacos estranhos)
-            cliente_nome = unicodedata.normalize('NFKD', cliente_nome).encode('ASCII', 'ignore').decode('utf-8')
-            cliente_nome = re.sub(r'[^a-zA-Z0-9_-]', '_', cliente_nome)
-            # data no formato dd-mm-yy
-            data_str = datetime.now().strftime("%d-%m-%y")
-            nome_sugerido = f"orcamento-{cliente_nome}-{data_str}.pdf"
-            data_str = datetime.now().strftime("%d-%m-%y")
-            nome_sugerido = f"orcamento-{cliente_nome}-{data_str}.pdf"
-
-            # Montar PDF
-            arquivo = filedialog.asksaveasfilename(
-                initialfile=nome_sugerido,
-                defaultextension=".pdf",
-                filetypes=[("Arquivos PDF", "*.pdf")],
-                title="Salvar orçamento em PDF"
-            )
-            if not arquivo:
-                return  # se cancelar, não gera
-            # cria o doc no caminho escolhido
-            doc = SimpleDocTemplate(arquivo, pagesize=A4,
-                                    leftMargin=30, rightMargin=30,
-                                    topMargin=40, bottomMargin=40)
+            doc = SimpleDocTemplate(arquivo_pdf, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=40)
             estilos = getSampleStyleSheet()
             elementos = []
 
-            # Logo da empresa
+            # --- Cabeçalho da empresa ---
             try:
-                
-                logo = Image("logo.png", width=120, height=30)  # ajuste conforme a sua logo
-                logo.hAlign = 'CENTER'
-                elementos.append(logo)
+                if caminho_logo and os.path.exists(caminho_logo):
+                    logo = Image(caminho_logo, width=100, height=40)
+                else:
+                    logo = Image("logo.png", width=100, height=40)
             except:
-                pass
+                logo = Paragraph(f"<b>{nome_emp}</b>", estilos["Title"])
 
-            # Título e número do orçamento
-            titulo = Paragraph("<para align='center'><font size=18><b>ORÇAMENTO</b></font></para>", estilos['Normal'])
-            elementos.append(titulo)
-            elementos.append(Spacer(1, 6))
-
-            num_orc = Paragraph(f"<para align='center'><font size=12>Nº <b>{numero_pedido}</b></font></para>",
-                                estilos['Normal'])
-            elementos.append(num_orc)
-            elementos.append(Spacer(1, 20))
-
-            partes_endereco = []
-            if endereco:
-                partes_endereco.append(endereco)
-            if cidade:
-                partes_endereco.append(cidade)
-            if estado:
-                partes_endereco.append(estado)
-            
-            
-            endereco_formatado = " - ".join(partes_endereco) if partes_endereco else "Não informado"    
-
-            try:
-                data_formatada = datetime.strptime(pedido[0], "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%y %H:%M")
-            except:
-                data_formatada = pedido[0] 
-
-            # Informações do cliente (tabela)
-            info_cliente = [
-                ["Data:", data_formatada],
-                ["Cliente:", razao_social],
-                ["CNPJ:", cnpj],
-                ["Endereço:", endereco_formatado],
-                ["Representante:", representante],
-                ["Status:", status],
-                ["Validade do Orçamento:", f"{validade} dias"],
+            info_empresa = [
+                [logo, Paragraph(
+                    f"<b>{nome_emp}</b><br/>"
+                    f"CNPJ: {cnpj_emp or ''}<br/>"
+                    f"Endereço: {end_emp or ''} {', ' + cid_emp if cid_emp else ''} {('- ' + est_emp) if est_emp else ''}<br/>"
+                    f"E-mail: {email_emp or ''} | {tel_emp or ''}",
+                    estilos["Normal"]
+                )]
             ]
-            t_info = Table(info_cliente, colWidths=[100, 380])
-            estilo_tabela(t_info, header=False)
-            elementos.append(t_info)
-            elementos.append(Spacer(1, 20))
+            tabela_empresa = Table(info_empresa, colWidths=[120, 400])
+            tabela_empresa.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP')
+            ]))
+            elementos.append(tabela_empresa)
+            elementos.append(Spacer(1, 10))
 
-            desc_style = ParagraphStyle(
-                name="Descricao",
-                fontSize=8,          # um pouco menor ajuda caber
-                leading=10,          # altura da linha
-                wordWrap='CJK'       # força quebra automática
-            )
+            # --- Título e dados do cliente ---
+            elementos.append(Paragraph(f"<b>ORÇAMENTO Nº {numero_pedido}</b>", estilos["Heading2"]))
+            elementos.append(Paragraph(f"Data: {data_pedido}", estilos["Normal"]))
+            elementos.append(Spacer(1, 8))
 
-            # Tabela de produtos
-            tabela = [["Código", "Descrição", "Qtd", "Valor Unit.", "Total"]]
-            for codigo, descricao, qtd, valor_unit in produtos:
-                total_item = (qtd or 0) * (valor_unit or 0)
-                tabela.append([
-                    codigo,
-                    Paragraph(descricao, desc_style),
-                    str(qtd),
-                    formatar_moeda(valor_unit or 0),
-                    formatar_moeda(total_item)
+            info_cliente = f"""
+            <b>Cliente:</b> {cliente_nome or ''}<br/>
+            <b>CNPJ:</b> {cliente_cnpj or ''}<br/>
+            <b>Endereço:</b> {cliente_endereco or ''} - {cliente_cidade or ''}/{cliente_estado or ''}<br/>
+            <b>Representante:</b> {representante or ''}<br/>
+            <b>Condições de Pagamento:</b> {condicoes_pagamento or ''}<br/>
+            <b>Validade:</b> {validade or ''}<br/>
+            """
+            elementos.append(Paragraph(info_cliente, estilos["Normal"]))
+            elementos.append(Spacer(1, 10))
+
+            # --- Tabela de itens ---
+            dados_itens = [["Descrição", "Qtd", "V. Unitário (R$)", "Subtotal (R$)"]]
+            for desc, qtd, valor_unit in itens:
+                subtotal_item = qtd * valor_unit
+                dados_itens.append([
+                    desc,
+                    f"{qtd:.2f}",
+                    f"{valor_unit:,.2f}",
+                    f"{subtotal_item:,.2f}"
                 ])
 
-            t = Table(tabela, colWidths=[60, 280, 50, 80, 80], repeatRows=1, hAlign="CENTER")
-            estilo_tabela(t, header=True)
-            elementos.append(t)
+            tabela_itens = Table(dados_itens, colWidths=[280, 60, 90, 90])
+            tabela_itens.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#cccccc')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                ('ALIGN', (1, 1), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ]))
+            elementos.append(tabela_itens)
+            elementos.append(Spacer(1, 10))
 
-            # Totais
-            totais = [
-                ['Subtotal', formatar_moeda(subtotal)],
-                ['ICMS', formatar_moeda(total_icms)],
-                ['IPI', formatar_moeda(total_ipi)],
-                ['PIS', formatar_moeda(total_pis)],
-                ['COFINS', formatar_moeda(total_cofins)],
+            # --- Totais ---
+            resumo = [
+                ["Subtotal", f"R$ {valor_produtos:,.2f}"],
+                ["ICMS", f"R$ {valor_icms:,.2f}"],
+                ["IPI", f"R$ {valor_ipi:,.2f}"],
+                ["PIS", f"R$ {valor_pis:,.2f}"],
+                ["COFINS", f"R$ {valor_cofins:,.2f}"],
+                ["Desconto", f"R$ {desconto or 0:,.2f}"],
+                ["Total Geral", f"R$ {valor_total:,.2f}"]
             ]
-            if desconto:
-                totais.append(['Desconto', f"- {formatar_moeda(desconto)}"])
-            totais.append(['TOTAL GERAL', formatar_moeda(total - desconto)])
-            GRID_COLOR = colors.HexColor("#D1D5DB")
-                
-            t_tot = Table(totais, colWidths=[400, 100], hAlign="RIGHT")
-            estilo_tabela(t_tot, header=True)   
+            tabela_totais = Table(resumo, colWidths=[380, 140], hAlign='RIGHT')
+            tabela_totais.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+                ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#eeeeee")),
+                ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.grey),
+                ('BOX', (0, 0), (-1, -1), 0.25, colors.grey)
+            ]))
+            elementos.append(tabela_totais)
 
-            elementos.append(t_tot)
-            elementos.append(Spacer(1, 20))
-
-            # Condições e observações
-            if cond_pag:
-                elementos.append(Paragraph(f"<b>Condições de Pagamento:</b> {cond_pag}", estilos['Normal']))
-            if validade:
-                elementos.append(Paragraph(f"<b>Validade:</b> {validade} dias", estilos['Normal']))
+            # --- Observações ---
             if observacoes:
-                elementos.append(Paragraph(f"<b>Observações:</b> {observacoes}", estilos['Normal']))
-            elementos.append(Spacer(1, 20))
+                elementos.append(Spacer(1, 10))
+                elementos.append(Paragraph("<b>Observações:</b>", estilos["Heading4"]))
+                elementos.append(Paragraph(observacoes, estilos["Normal"]))
 
-            # Rodapé fixo
-            elementos.append(Paragraph("<font size=9>Orçamento válido conforme condições acima.</font>", estilos['Italic']))
-            elementos.append(Paragraph("<font size=9>Valores sujeitos a alterações sem aviso prévio.</font>",
-                                    estilos['Italic']))
-            # Gerar arquivo
+            # --- Geração ---
             doc.build(elementos)
-            messagebox.showinfo("Sucesso", f"PDF gerado: {arquivo}")
+            os.startfile(arquivo_pdf)
+            messagebox.showinfo("PDF Gerado", f"Orçamento {numero_pedido} salvo em:\n{arquivo_pdf}")
 
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao gerar PDF: {e}")
+
 
     def importar_dados(self, tipo="clientes"):
     
@@ -1956,6 +1997,97 @@ class SistemaPedidos:
         nome_arquivo = f"Orcamento_{numero_pedido}.xlsx"
         wb.save(nome_arquivo)
         os.startfile(nome_arquivo)
+
+    def abrir_formulario_empresa(self, empresa=None):
+        janela = tk.Toplevel(self.root)
+        janela.title("Cadastro de Empresa")
+        janela.geometry("600x400")
+        janela.grab_set()
+
+        campos = [
+            ("Nome", "nome"), ("CNPJ", "cnpj"), ("IE", "ie"),
+            ("Endereço", "endereco"), ("Cidade", "cidade"), ("Estado", "estado"),
+            ("CEP", "cep"), ("Telefone", "telefone"), ("Email", "email"), ("Logo (caminho)", "caminho_logo")
+        ]
+
+        entradas = {}
+        for i, (rotulo, campo) in enumerate(campos):
+            ttk.Label(janela, text=rotulo + ":").grid(row=i, column=0, sticky="w", padx=8, pady=4)
+            entrada = ttk.Entry(janela, width=50)
+            entrada.grid(row=i, column=1, padx=8, pady=4)
+            entradas[campo] = entrada
+
+        if empresa:
+            # Pré-carrega dados no formulário
+            colunas = ["id", "nome", "cnpj", "ie", "endereco", "cidade", "estado", "cep", "telefone", "email", "caminho_logo"]
+            for idx, campo in enumerate(colunas[1:]):  # pula o id
+                entradas[campo].insert(0, empresa[idx+1])
+
+        def salvar_empresa():
+            dados = {campo: entradas[campo].get().strip() for campo in entradas}
+            if not dados["nome"]:
+                messagebox.showwarning("Aviso", "O campo Nome é obrigatório.")
+                return
+            if empresa:
+                self.cursor.execute('''
+                    UPDATE empresas
+                    SET nome=?, cnpj=?, ie=?, endereco=?, cidade=?, estado=?, cep=?, telefone=?, email=?, caminho_logo=?
+                    WHERE id=?
+                ''', (dados["nome"], dados["cnpj"], dados["ie"], dados["endereco"], dados["cidade"], dados["estado"],
+                    dados["cep"], dados["telefone"], dados["email"], dados["caminho_logo"], empresa[0]))
+            else:
+                self.cursor.execute('''
+                    INSERT INTO empresas (nome, cnpj, ie, endereco, cidade, estado, cep, telefone, email, caminho_logo)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (dados["nome"], dados["cnpj"], dados["ie"], dados["endereco"], dados["cidade"], dados["estado"],
+                    dados["cep"], dados["telefone"], dados["email"], dados["caminho_logo"]))
+            self.conn.commit()
+            janela.destroy()
+            self.carregar_empresas()
+            self.carregar_combos_pedido()  # atualiza lista de empresas na aba orçamentos
+
+        ttk.Button(janela, text="Salvar", command=salvar_empresa).grid(row=len(campos), column=0, columnspan=2, pady=10)
+
+
+    def carregar_empresas(self):
+        try:
+            for item in getattr(self, 'tree_empresas', []).get_children():
+                self.tree_empresas.delete(item)
+        except Exception:
+            pass
+        self.cursor.execute("SELECT id, nome, cnpj, cidade, telefone FROM empresas")
+        for row in self.cursor.fetchall():
+            self.tree_empresas.insert('', 'end', values=row)
+
+    def editar_empresa(self):
+        sel = self.tree_empresas.selection()
+        if not sel:
+            messagebox.showwarning("Atenção", "Selecione uma empresa.")
+            return
+        vals = self.tree_empresas.item(sel[0], 'values')
+        empresa_id = vals[0]
+        self.cursor.execute("SELECT * FROM empresas WHERE id=?", (empresa_id,))
+        empresa = self.cursor.fetchone()
+        if empresa:
+            self.abrir_formulario_empresa(empresa)
+
+    def excluir_empresa(self):
+        sel = self.tree_empresas.selection()
+        if not sel:
+            messagebox.showwarning("Atenção", "Selecione uma empresa para excluir.")
+            return
+        if not messagebox.askyesno("Confirmar", "Deseja excluir a(s) empresa(s) selecionada(s)?"):
+            return
+        try:
+            for item in sel:
+                vals = self.tree_empresas.item(item, 'values')
+                self.cursor.execute("DELETE FROM empresas WHERE id=?", (vals[0],))
+            self.conn.commit()
+            self.carregar_empresas()
+            self.carregar_combos_pedido()
+        except Exception as e:
+            messagebox.showerror("Erro", f"Falha ao excluir: {e}")
+
 
     def __del__(self):
             if hasattr(self, 'conn'):
