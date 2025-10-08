@@ -267,11 +267,9 @@ class SistemaPedidos:
     def criar_aba_empresas(self):
         aba = ttk.Frame(self.notebook)
         self.notebook.add(aba, text="Empresas")
-
         # Botões de ação
         frame_botoes = ttk.Frame(aba)
         frame_botoes.pack(fill="x", padx=10, pady=5)
-
         ttk.Button(frame_botoes, text="Adicionar", command=self.adicionar_empresa).pack(side="left", padx=5)
         ttk.Button(frame_botoes, text="Editar", command=self.editar_empresa).pack(side="left", padx=5)
         ttk.Button(frame_botoes, text="Excluir", command=self.excluir_empresa).pack(side="left", padx=5)
@@ -502,27 +500,22 @@ class SistemaPedidos:
         # Cliente
         ttk.Label(search_frame, text="Cliente:").pack(side="left", padx=5)
         self.entry_busca_cliente = ttk.Entry(search_frame, width=25)
-        self.entry_busca_cliente.pack(side="left", padx=5)
-
+        self.entry_busca_cliente.pack(side="left", padx=5)  
         # Representante
         ttk.Label(search_frame, text="Representante:").pack(side="left", padx=5)
         self.entry_busca_repr = ttk.Entry(search_frame, width=20)
         self.entry_busca_repr.pack(side="left", padx=5)
-
         # Status
         ttk.Label(search_frame, text="Status:").pack(side="left", padx=5)
         self.combo_status = ttk.Combobox(search_frame, values=["", "Em Aberto", "Aprovado", "Cancelado", "Rejeitado"], width=15)
         self.combo_status.pack(side="left", padx=5)
-
         # Datas
         ttk.Label(search_frame, text="Data Inicial (dd/mm/aaaa):").pack(side="left", padx=5)
         self.entry_data_ini = ttk.Entry(search_frame, width=12)
         self.entry_data_ini.pack(side="left", padx=5)
-
         ttk.Label(search_frame, text="Data Final (dd/mm/aaaa):").pack(side="left", padx=5)
         self.entry_data_fim = ttk.Entry(search_frame, width=12)
         self.entry_data_fim.pack(side="left", padx=5)
-
         # Botão buscar
         ttk.Button(search_frame, text="Buscar", command=self.buscar_orcamento).pack(side="left", padx=5)
 
@@ -543,9 +536,9 @@ class SistemaPedidos:
 
 
         # Configuração de cores só no texto do Status
-        self.tree_orcamentos.tag_configure("Em Aberto", foreground="#B5EAF7")   # azul
+        self.tree_orcamentos.tag_configure("Em Aberto", foreground="#00EEFF")   # azul
         self.tree_orcamentos.tag_configure("Aprovado", foreground="#00ff5e")    # verde
-        self.tree_orcamentos.tag_configure("Rejeitado", foreground="#FF0000")   # vermelho
+        self.tree_orcamentos.tag_configure("Rejeitado", foreground="#FF0202")   # vermelho
         self.tree_orcamentos.tag_configure("Cancelado", foreground="#ff5900")   # laranja
 
         self.tree_orcamentos.bind("<Double-1>", self.visualizar_orcamento)
@@ -1289,8 +1282,8 @@ class SistemaPedidos:
         cols = ("Código", "Descrição", "Qtd", "Valor Unit.", "Total")
         tree_itens = ttk.Treeview(frame_itens, columns=cols, show="headings", height=10)
         for col in cols:
-            tree_itens.heading(col, text=col)
-            tree_itens.column(col, width=130)
+            tree_itens.heading(col, text=col, anchor="center")
+            tree_itens.column(col, width=130, anchor="center")
         tree_itens.pack(fill="both", expand=True)
 
         # Carregar itens do pedido
@@ -2076,8 +2069,6 @@ class SistemaPedidos:
 
         ttk.Button(top, text="Salvar", bootstyle=SUCCESS, command=salvar).grid(row=6, column=0, columnspan=2, pady=10)
 
-
-
     def carregar_empresas(self):
         try:
             for item in getattr(self, 'tree_empresas', []).get_children():
@@ -2092,7 +2083,6 @@ class SistemaPedidos:
             telefone_fmt = formatar_telefone(telefone)
 
             self.tree_empresas.insert('', 'end', values=(id_, nome, cnpj_fmt, cidade, telefone_fmt))
-
 
     def editar_empresa(self):
         sel = self.tree_empresas.selection()
