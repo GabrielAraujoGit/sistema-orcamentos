@@ -7,6 +7,21 @@ Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## \[Unreleased\]
 
+## [1.4.1] - 09/Out/25
+
+### Changed
+
+* **Removida a exibição dos IDs** nas abas **Empresas** e **Produtos**, mantendo-os apenas para uso interno.
+* **`carregar_empresas()`** e **`editar_empresa()`** ajustados para uso de `tags` (armazenando o ID de forma oculta).
+* **`carregar_produtos()`** atualizado para alinhar corretamente as colunas e remover o campo `id` do `SELECT`.
+* Layout mais limpo e consistente entre todas as abas do sistema.
+
+### Fixed
+
+* Corrigido desalinhamento de colunas causado pela presença do ID oculto no `SELECT`.
+* Corrigido bug menor ao abrir o formulário de edição de empresa quando a coluna ID era removida da tabela.
+
+---
 
 ## [1.4.0] - 07/Out/25
 
