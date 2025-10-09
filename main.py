@@ -28,8 +28,6 @@ from reportlab.platypus import Table, TableStyle, Image as PDFImage, Paragraph, 
 from reportlab.lib import colors
 import requests
 
-
-
 def formatar_cnpj(cnpj):
     c = ''.join(filter(str.isdigit, str(cnpj)))
     if len(c) == 14:
@@ -128,16 +126,12 @@ class SistemaPedidos:
                 email TEXT
             )
         ''')
-
-        # Garantir que a coluna empresa_id existe na tabela pedidos
         try:
             self.cursor.execute("ALTER TABLE pedidos ADD COLUMN empresa_id INTEGER")
             self.conn.commit()
         except Exception:
             # se já existir, ignora o erro
             pass
-
-        # produtos
         # produtos
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS produtos (
@@ -154,7 +148,6 @@ class SistemaPedidos:
                 aliq_cofins REAL DEFAULT 0
             )
         ''')
-
         # empresas (empresas que emitem orçamentos)
         self.cursor.execute('''
             CREATE TABLE IF NOT EXISTS empresas (
@@ -341,7 +334,7 @@ class SistemaPedidos:
         list_frame = ttk.LabelFrame(frame, text="Clientes Cadastrados", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
-        cols = ('ID', 'Razão Social', 'CNPJ', 'Cidade', 'Telefone')
+        cols = ('Razão Social', 'CNPJ', 'Cidade', 'Telefone')
         self.tree_clientes = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
         for col in cols:
             self.tree_clientes.heading(col, text=col)
@@ -436,7 +429,7 @@ class SistemaPedidos:
             # lista
             list_frame = ttk.LabelFrame(frame, text="Empresas Cadastradas", padding=10)
             list_frame.pack(fill='both', expand=True, padx=10, pady=10)
-            cols = ('ID','Nome','CNPJ','Cidade','Telefone')
+            cols = ('Nome','CNPJ','Cidade','Telefone')
             self.tree_empresas = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
             for col in cols:
                 self.tree_empresas.heading(col, text=col)
@@ -656,7 +649,7 @@ class SistemaPedidos:
                 WHERE razao_social LIKE ? OR cnpj LIKE ?
             ''', (f'%{filtro}%', f'%{filtro}%'))
         else:
-            self.cursor.execute('SELECT id, razao_social, cnpj, cidade, telefone FROM clientes')
+            self.cursor.execute('SELECT razao_social, cnpj, cidade, telefone FROM clientes')
         for row in self.cursor.fetchall():
             self.tree_clientes.insert('', 'end', values=row)
 
@@ -676,11 +669,8 @@ class SistemaPedidos:
     def criar_aba_produtos(self):
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text="Produtos")
-
-        # --- Barra de botões ---
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill='x', padx=10, pady=5)
-
         ttk.Button(btn_frame, text="Adicionar", bootstyle=SUCCESS,
                 command=lambda: self.abrir_formulario_produto()).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Editar", bootstyle=INFO,
@@ -689,24 +679,17 @@ class SistemaPedidos:
                 command=self.excluir_produto).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Importar Arquivo", bootstyle=WARNING,
                 command=lambda: self.importar_dados("produtos")).pack(side='left', padx=5)
-
-        # --- Filtro por Tipo ---
         filtro_frame = ttk.Frame(frame)
         filtro_frame.pack(fill='x', padx=10, pady=5)
-
         ttk.Label(filtro_frame, text="Filtrar por Tipo:").pack(side='left', padx=5)
         self.combo_filtro_tipo = ttk.Combobox(filtro_frame, width=25, state="readonly")
         self.combo_filtro_tipo.pack(side='left', padx=5)
         ttk.Button(filtro_frame, text="Aplicar", command=self.filtrar_produtos_tipo).pack(side='left', padx=5)
         ttk.Button(filtro_frame, text="Limpar", command=lambda: self.carregar_produtos()).pack(side='left', padx=5)
-
-        # --- Lista de produtos ---
         list_frame = ttk.LabelFrame(frame, text="Produtos Cadastrados", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=10)
-
-        cols = ('ID', 'Código', 'Descrição', 'Tipo', 'Origem', 'Valor', 'ICMS%', 'IPI%', 'PIS/COFINS%')
+        cols = ('Código', 'Descrição', 'Tipo', 'Origem', 'Valor', 'ICMS%', 'IPI%', 'PIS/COFINS%')
         self.tree_produtos = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
-
         for col in cols:
             self.tree_produtos.heading(col, text=col)
             if col in ('ID', 'ICMS%', 'IPI%', 'PIS/COFINS%'):
@@ -715,15 +698,12 @@ class SistemaPedidos:
                 self.tree_produtos.column(col, width=100, anchor='center')
             else:
                 self.tree_produtos.column(col, width=160, anchor='center')
-
         scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.tree_produtos.yview)
         self.tree_produtos.configure(yscrollcommand=scrollbar.set)
         self.tree_produtos.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
         self.tree_produtos.bind("<Control-c>", self.copiar_celula_treeview)
         self.tree_produtos.bind("<Control-Double-1>", self.copiar_celula_treeview, add='+')
-
-
         self.carregar_produtos()
 
     def salvar_produto(self):
@@ -768,7 +748,7 @@ class SistemaPedidos:
         
         # Agora trazemos todas as colunas que o Treeview espera
         self.cursor.execute('''
-            SELECT id, codigo, descricao, tipo, origem_tributacao,
+            SELECT codigo, descricao, tipo, origem_tributacao,
                 valor_unitario, aliq_icms, aliq_ipi, aliq_pis
             FROM produtos
         ''')
@@ -833,8 +813,6 @@ class SistemaPedidos:
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao excluir produto(s): {e}")
 
-    # ------------------- Pedidos/Orçamentos -------------------
-
     def criar_aba_pedidos(self):
         frame = tb.Frame(self.notebook)
         self.notebook.add(frame, text="Orçamentos")
@@ -895,7 +873,6 @@ class SistemaPedidos:
         tb.Button(top_frame, text="Remover Item", command=self.remover_item, bootstyle="danger").grid(row=1, column=7, padx=5)
         items_frame = tb.Labelframe(frame, text="Itens do Orçamento", padding=6, bootstyle="info")
         items_frame.pack(fill='both', expand=True, padx=10, pady=6)
-
         cols = ('Produto', 'Qtd', 'Valor Unit.', 'Total')
         self.tree_pedido_items = tb.Treeview(
             items_frame, columns=cols, show='headings', height=9, bootstyle="info"
@@ -1138,8 +1115,6 @@ class SistemaPedidos:
 
     def atualizar_totais(self):
         subtotal = sum(item['qtd'] * item['valor'] for item in self.itens_pedido_temp)
-        
-        # calcula impostos de cada item
         total_icms = 0
         total_ipi = 0
         total_pis = 0
@@ -1147,7 +1122,7 @@ class SistemaPedidos:
 
         for item in self.itens_pedido_temp:
             self.cursor.execute('''
-                SELECT aliq_icms, aliq_ipi, aliq_pis, aliq_cofins
+                SELECT aliq_icms, aliq  _ipi, aliq_pis, aliq_cofins
                 FROM produtos WHERE id = ?
             ''', (item['produto_id'],))
             aliq_icms, aliq_ipi, aliq_pis, aliq_cofins = self.cursor.fetchone()
@@ -2049,14 +2024,16 @@ class SistemaPedidos:
                 self.tree_empresas.delete(item)
         except Exception:
             pass
+
+        # Continua buscando o ID (para identificar ao editar/excluir)
         self.cursor.execute("SELECT id, nome, cnpj, cidade, telefone FROM empresas")
         for row in self.cursor.fetchall():
             id_, nome, cnpj, cidade, telefone = row
-
             cnpj_fmt = formatar_cnpj(cnpj)
             telefone_fmt = formatar_telefone(telefone)
+            # Guardamos o ID como "tags" (oculto), mas não mostramos na tabela
+            self.tree_empresas.insert('', 'end', values=(nome, cnpj_fmt, cidade, telefone_fmt), tags=(id_,))
 
-            self.tree_empresas.insert('', 'end', values=(id_, nome, cnpj_fmt, cidade, telefone_fmt))
 
     def editar_empresa(self):
         sel = self.tree_empresas.selection()
@@ -2064,7 +2041,7 @@ class SistemaPedidos:
             messagebox.showwarning("Atenção", "Selecione uma empresa.")
             return
         vals = self.tree_empresas.item(sel[0], 'values')
-        empresa_id = vals[0]
+        empresa_id = self.tree_empresas.item(sel[0], 'tags')[0]
         self.cursor.execute("SELECT * FROM empresas WHERE id=?", (empresa_id,))
         empresa = self.cursor.fetchone()
         if empresa:
@@ -2092,7 +2069,7 @@ class SistemaPedidos:
             if hasattr(self, 'conn'):
                 self.conn.close()
 
-if __name__ == "__main__":
+if __name__ == "__main__":      
     root = tb.Window(themename="solar")
     app = SistemaPedidos(root)
     root.mainloop()
