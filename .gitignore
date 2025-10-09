@@ -55,3 +55,7 @@ Desktop.ini
 
 # Banco de dados local
 *.db
+
+# Criptografia 
+
+secret.key

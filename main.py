@@ -1122,7 +1122,7 @@ class SistemaPedidos:
 
         for item in self.itens_pedido_temp:
             self.cursor.execute('''
-                SELECT aliq_icms, aliq  _ipi, aliq_pis, aliq_cofins
+                SELECT aliq_icms, aliq_ipi, aliq_pis, aliq_cofins
                 FROM produtos WHERE id = ?
             ''', (item['produto_id'],))
             aliq_icms, aliq_ipi, aliq_pis, aliq_cofins = self.cursor.fetchone()
