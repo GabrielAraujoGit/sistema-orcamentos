@@ -33,13 +33,11 @@ def formatar_cnpj(cnpj):
     if len(c) == 14:
         return f"{c[:2]}.{c[2:5]}.{c[5:8]}/{c[8:12]}-{c[12:]}"
     return c
-
 def formatar_cep(cep):
     c = ''.join(filter(str.isdigit, str(cep)))
     if len(c) == 8:
         return f"{c[:5]}-{c[5:]}"
     return c
-
 def formatar_telefone(tel):
     t = ''.join(filter(str.isdigit, str(tel)))
     if len(t) == 11:
@@ -47,8 +45,6 @@ def formatar_telefone(tel):
     elif len(t) == 10:
         return f"({t[:2]}) {t[2:6]}-{t[6:]}"
     return tel
-
-
 def formatar_moeda(valor):
     try:
         if valor is None:
@@ -68,7 +64,6 @@ def formatar_moeda(valor):
             v = float(valor)
     except Exception:
         v = 0.0
-
     texto = f"{v:,.2f}"            # ex: "1234.56" -> "1,234.56"
     texto = texto.replace(",", "V").replace(".", ",").replace("V", ".")  # -> "1.234,56"
     return f"R$ {texto}"
@@ -278,7 +273,6 @@ class SistemaPedidos:
         self.tree_empresas.pack(fill="both", expand=True)
 
         self.carregar_empresas()        
-    
 
     def buscar_cep(self, cep, entries):
         """Busca endereço via API e preenche campos."""
@@ -1613,7 +1607,6 @@ class SistemaPedidos:
         except Exception as e:
             messagebox.showerror("Erro", f"Erro ao gerar PDF:\n{e}")
 
-
     def importar_dados(self, tipo="clientes"):
     
                 caminho = filedialog.askopenfilename(
@@ -1958,7 +1951,6 @@ class SistemaPedidos:
         top = tk.Toplevel(self.root)
         top.title("Cadastro de Empresa")
         top.geometry("650x420")
-
         # Estrutura de campos
         labels = ['Nome:', 'CNPJ:', 'IE:', 'CEP:', 'Endereço:', 'Cidade:', 'Estado:', 'Telefone:', 'Email:']
         entries = {}
@@ -2034,7 +2026,6 @@ class SistemaPedidos:
             # Guardamos o ID como "tags" (oculto), mas não mostramos na tabela
             self.tree_empresas.insert('', 'end', values=(nome, cnpj_fmt, cidade, telefone_fmt), tags=(id_,))
 
-
     def editar_empresa(self):
         sel = self.tree_empresas.selection()
         if not sel:
@@ -2063,8 +2054,6 @@ class SistemaPedidos:
             self.carregar_combos_pedido()
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao excluir: {e}")
-
-
     def __del__(self):
             if hasattr(self, 'conn'):
                 self.conn.close()
