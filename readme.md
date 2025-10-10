@@ -55,3 +55,4 @@ A interface gráfica será aberta com abas para **Clientes**, **Produtos**, **Or
 - `requirements.txt` → dependências  
 - `pedidos.db` → banco SQLite (gerado automaticamente)  
 - `*.xlsx` / `*.pdf` → arquivos exportados  
+
