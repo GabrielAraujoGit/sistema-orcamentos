@@ -918,63 +918,100 @@ class SistemaPedidos:
 
     def carregar_orcamento_para_edicao(self, numero_pedido):
         """
-        Carrega um orçamento salvo para edição na aba 'Orçamentos'.
+        Carrega um orçamento salvo para edição em uma nova aba separada.
         """
-        # Buscar dados principais do pedido (inclui cliente_id e status)
+        # Remove aba antiga de edição se já existir
+        for i, tab_id in enumerate(self.notebook.tabs()):
+            if "Editar Orçamento" in self.notebook.tab(tab_id, "text"):
+                self.notebook.forget(tab_id)
+                break
+
+        # Cria nova aba
+        aba_editar = tb.Frame(self.notebook)
+        self.notebook.add(aba_editar, text=f"Editar Orçamento ({numero_pedido})")
+        self.notebook.select(aba_editar)
+
+        # Buscar dados principais
         self.cursor.execute('''
-            SELECT p.data_pedido, p.cliente_id, p.valor_produtos, p.valor_icms, p.valor_ipi, 
-                p.valor_pis, p.valor_cofins, p.valor_total, p.representante, 
-                p.condicoes_pagamento, p.desconto, p.observacoes, p.validade, p.status
+            SELECT p.data_pedido, p.cliente_id, p.valor_produtos, p.valor_icms, p.valor_ipi,
+                p.valor_pis, p.valor_cofins, p.valor_total, p.representante,
+                p.condicoes_pagamento, p.desconto, p.observacoes, p.validade, p.status,
+                p.empresa_id
             FROM pedidos p
             WHERE p.numero_pedido = ?
         ''', (numero_pedido,))
         pedido = self.cursor.fetchone()
         if not pedido:
-            messagebox.showerror("Erro", "Orçamento não encontrado para edição.")
+            messagebox.showerror("Erro", "Orçamento não encontrado.")
             return
 
         (data_pedido, cliente_id, subtotal, icms, ipi, pis, cofins, total,
-        representante, cond_pag, desconto, observacoes, validade, status) = pedido
+        representante, cond_pag, desconto, observacoes, validade, status, empresa_id) = pedido
 
-        # preencher cabeçalho
+        # --- Cabeçalho ---
+        header = tb.Labelframe(aba_editar, text="Cabeçalho do Orçamento", bootstyle="primary", padding=8)
+        header.pack(fill='x', padx=10, pady=10)
+
+        tb.Label(header, text="Nº Orçamento:").grid(row=0, column=0, sticky="w", padx=5)
+        tb.Label(header, text=numero_pedido, bootstyle="secondary").grid(row=0, column=1, padx=5)
+
+        tb.Label(header, text="Data:").grid(row=0, column=2, sticky="w", padx=5)
+        entry_data = tb.Entry(header, width=15)
+        entry_data.grid(row=0, column=3, padx=5)
         try:
-            data_str = datetime.strptime(data_pedido, "%Y-%m-%d %H:%M:%S").strftime('%d/%m/%Y')
+            entry_data.insert(0, datetime.strptime(data_pedido, "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%Y"))
         except:
-            data_str = data_pedido
+            entry_data.insert(0, data_pedido)
 
-        self.entry_data_orc.delete(0, tk.END)
-        self.entry_data_orc.insert(0, data_str)
-        self.label_numero_orc.config(text=numero_pedido)
-        self.entry_representante.delete(0, tk.END)
-        self.entry_representante.insert(0, representante or "")
-        self.entry_cond_pag.delete(0, tk.END)
-        self.entry_cond_pag.insert(0, cond_pag or "")
-        self.entry_validade.delete(0, tk.END)
-        self.entry_validade.insert(0, validade or "")
-        self.entry_desconto.delete(0, tk.END)
-        self.entry_desconto.insert(0, str(desconto or 0))
-        self.text_obs.delete("1.0", tk.END)
-        self.text_obs.insert("1.0", observacoes or "")
-        self.label_status_orc.grid(row=0, column=6, sticky=W, padx=5)
-        self.combo_status_orc.grid(row=0, column=7, padx=5)
-        self.combo_status_orc.set(status or "Em Aberto")
-        # 👉 mostrar número do orçamento quando editar
-        self.label_numero_orc_lbl.grid(row=0, column=2, sticky=W, padx=5)
-        self.label_numero_orc.grid(row=0, column=3, padx=5)
-        self.label_numero_orc.config(text=numero_pedido)
-        # selecionar cliente no combo (formato: "id - nome")
-        self.cursor.execute("SELECT razao_social FROM clientes WHERE id=?", (cliente_id,))
-        cliente_nome = self.cursor.fetchone()
-        if cliente_nome:
-            self.combo_cliente.set(f"{cliente_id} - {cliente_nome[0]}")
-        else:
-            self.combo_cliente.set("")
+        tb.Label(header, text="Status:").grid(row=0, column=4, sticky="w", padx=5)
+        combo_status = tb.Combobox(header, values=["Em Aberto", "Aprovado", "Cancelado", "Rejeitado"], width=15)
+        combo_status.set(status or "Em Aberto")
+        combo_status.grid(row=0, column=5, padx=5)
 
-        # carregar itens do pedido para a lista temporária e treeview
-        self.itens_pedido_temp = []
-        for item in self.tree_pedido_items.get_children():
-            self.tree_pedido_items.delete(item)
+        tb.Label(header, text="Representante:").grid(row=1, column=0, sticky="w", padx=5)
+        entry_repr = tb.Entry(header, width=30)
+        entry_repr.grid(row=1, column=1, padx=5, columnspan=2)
+        entry_repr.insert(0, representante or "")
 
+        tb.Label(header, text="Cliente:").grid(row=1, column=3, sticky="w", padx=5)
+        combo_cliente = tb.Combobox(header, width=60)
+        combo_cliente.grid(row=1, column=4, columnspan=2, padx=5)
+        self.cursor.execute("SELECT id, razao_social FROM clientes")
+        clientes = [f"{cid} - {nome}" for cid, nome in self.cursor.fetchall()]
+        combo_cliente['values'] = clientes
+        try:
+            self.cursor.execute("SELECT razao_social FROM clientes WHERE id=?", (cliente_id,))
+            nome_cliente = self.cursor.fetchone()[0]
+            combo_cliente.set(f"{cliente_id} - {nome_cliente}")
+        except:
+            pass
+
+        # Empresa emissora
+        tb.Label(header, text="Empresa (emissor):").grid(row=2, column=0, sticky="w", padx=5)
+        combo_empresa = tb.Combobox(header, width=60)
+        combo_empresa.grid(row=2, column=1, columnspan=3, padx=5)
+        self.cursor.execute("SELECT id, nome FROM empresas")
+        empresas = [f"{eid} - {nome}" for eid, nome in self.cursor.fetchall()]
+        combo_empresa['values'] = empresas
+        if empresa_id:
+            try:
+                self.cursor.execute("SELECT nome FROM empresas WHERE id=?", (empresa_id,))
+                emp_nome = self.cursor.fetchone()[0]
+                combo_empresa.set(f"{empresa_id} - {emp_nome}")
+            except:
+                pass
+
+        # --- Itens do orçamento ---
+        frame_itens = tb.Labelframe(aba_editar, text="Itens do Orçamento", bootstyle="info", padding=8)
+        frame_itens.pack(fill="both", expand=True, padx=10, pady=5)
+        cols = ("Produto", "Qtd", "Valor Unit.", "Total")
+        tree_itens = tb.Treeview(frame_itens, columns=cols, show="headings", bootstyle="info")
+        for col in cols:
+            tree_itens.heading(col, text=col)
+            tree_itens.column(col, width=160, anchor="center")
+        tree_itens.pack(fill="both", expand=True)
+
+        # Carregar itens do banco
         self.cursor.execute('''
             SELECT pr.id, pr.codigo, pr.descricao, pi.qtd, pi.valor_unitario
             FROM pedido_itens pi
@@ -982,33 +1019,73 @@ class SistemaPedidos:
             WHERE pi.numero_pedido = ?
         ''', (numero_pedido,))
         itens = self.cursor.fetchall()
+
+        itens_temp = []
         for prod_id, codigo, descricao, qtd, valor_unit in itens:
-            total_item = (qtd or 0) * (valor_unit or 0)
-            self.tree_pedido_items.insert('', 'end',
-                values=(f"{codigo} - {descricao}", qtd,
-                        formatar_moeda(valor_unit), formatar_moeda(total_item)))
-            self.itens_pedido_temp.append({
-                'produto_id': prod_id,
-                'codigo': codigo,
-                'descricao': descricao,
-                'qtd': qtd,
-                'valor': float(valor_unit)
-            })
+            total_item = qtd * valor_unit
+            itens_temp.append({'produto_id': prod_id, 'codigo': codigo, 'descricao': descricao,
+                            'qtd': qtd, 'valor': valor_unit})
+            tree_itens.insert('', 'end', values=(
+                f"{codigo} - {descricao}", qtd, formatar_moeda(valor_unit), formatar_moeda(total_item)
+            ))
 
-        # atualizar totais e marcar modo edição
-        self.atualizar_totais()
-        self.edicao_numero_pedido = numero_pedido
-        # trocar texto do botão
-        try:
-            self.btn_finalizar_pedido.config(text="Atualizar Orçamento")
-        except:
-            pass
+        # --- Totais e ações ---
+        frame_totais = tb.Labelframe(aba_editar, text="Totais & Ações", bootstyle="warning", padding=8)
+        frame_totais.pack(fill='x', padx=10, pady=5)
 
-        # muda para a aba de orçamentos
-        for i in range(len(self.notebook.tabs())):
-            if self.notebook.tab(i, "text") == "Orçamentos":
-                self.notebook.select(i)
-                break
+        label_total = tb.Label(frame_totais, text=f"TOTAL: {formatar_moeda(total)}",
+                            font=('Segoe UI', 11, 'bold'), bootstyle="success")
+        label_total.pack(side="left", padx=8)
+
+        def atualizar_orcamento():
+            try:
+                cliente_id_sel = int(combo_cliente.get().split(" - ")[0])
+                status_sel = combo_status.get()
+                repr_sel = entry_repr.get()
+                cond_pag = cond_pag_entry.get()
+                validade = entry_validade.get()
+                desconto_val = float(entry_desc.get() or 0)
+                obs_texto = txt_obs.get("1.0", tk.END).strip()
+
+                self.cursor.execute('''
+                    UPDATE pedidos
+                    SET cliente_id=?, representante=?, condicoes_pagamento=?, desconto=?, observacoes=?, validade=?, status=?
+                    WHERE numero_pedido=?
+                ''', (cliente_id_sel, repr_sel, cond_pag, desconto_val, obs_texto, validade, status_sel, numero_pedido))
+                self.conn.commit()
+                messagebox.showinfo("Sucesso", f"Orçamento {numero_pedido} atualizado com sucesso!")
+                self.buscar_orcamento()
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao atualizar: {e}")
+
+        tb.Button(frame_totais, text="Atualizar Orçamento", bootstyle="success", command=atualizar_orcamento).pack(side="right", padx=8)
+        tb.Button(frame_totais, text="Gerar PDF", bootstyle="danger-outline",
+                command=lambda: self.gerar_pdf_orcamento(numero_pedido)).pack(side="right", padx=8)
+
+        # --- Informações adicionais ---
+        frame_extra = tb.Labelframe(aba_editar, text="Informações Comerciais", bootstyle="secondary", padding=8)
+        frame_extra.pack(fill='x', padx=10, pady=5)
+
+        tb.Label(frame_extra, text="Condições de Pagamento:").grid(row=0, column=0, sticky="w", padx=5)
+        cond_pag_entry = tb.Entry(frame_extra, width=40)
+        cond_pag_entry.grid(row=0, column=1, padx=5)
+        cond_pag_entry.insert(0, cond_pag or "")
+
+        tb.Label(frame_extra, text="Validade (dias):").grid(row=0, column=2, sticky="w", padx=5)
+        entry_validade = tb.Entry(frame_extra, width=10)
+        entry_validade.grid(row=0, column=3, padx=5)
+        entry_validade.insert(0, validade or "")
+
+        tb.Label(frame_extra, text="Desconto (R$):").grid(row=1, column=0, sticky="w", padx=5)
+        entry_desc = tb.Entry(frame_extra, width=15)
+        entry_desc.grid(row=1, column=1, padx=5)
+        entry_desc.insert(0, str(desconto or 0))
+
+        tb.Label(frame_extra, text="Observações:").grid(row=2, column=0, sticky="nw", padx=5)
+        txt_obs = tk.Text(frame_extra, width=80, height=3)
+        txt_obs.grid(row=2, column=1, columnspan=3, padx=5)
+        txt_obs.insert("1.0", observacoes or "")
+
 
     def remover_item(self):
         selecionado = self.tree_pedido_items.selection()
@@ -1257,8 +1334,8 @@ class SistemaPedidos:
         frame_botoes = ttk.Frame(top)
         frame_botoes.pack(fill="x", pady=10)
         ttk.Button(frame_botoes, text="Exportar p/ Excel", bootstyle=DANGER,command=self.exportar_excel_orcamento).pack(side="left", padx=5)
-        ttk.Button(frame_botoes, bootstyle=INFO, text="Abrir Orçamento", 
-                command=lambda: (top.destroy(), self.carregar_orcamento_para_edicao(numero_pedido))).pack(side="left", padx=5)
+        ttk.Button(frame_botoes, bootstyle=INFO, text="Editar em Nova Aba", 
+        command=lambda: (top.destroy(), self.carregar_orcamento_para_edicao(numero_pedido))).pack(side="left", padx=5)
         ttk.Button(frame_botoes, text="Fechar", command=top.destroy).pack(side="right", padx=5)
         
     def limpar_pedido(self):
