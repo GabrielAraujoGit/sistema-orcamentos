@@ -7,6 +7,32 @@ Changelog](https://keepachangelog.com/pt-BR/1.0.0/).
 
 ## \[Unreleased\]
 
+## [1.5.0] - 10/Out/25
+
+### Added
+
+* **Aba exclusiva “Editar Orçamento”**:
+  - Agora, a edição de orçamentos ocorre em uma tela totalmente separada da de criação.
+  - A nova aba é criada automaticamente ao clicar em **“Editar em Nova Aba”** na aba **Consultar Orçamentos**.
+  - Exibe o número do orçamento, status, representante, cliente, condições comerciais, validade, observações e totais.
+  - Inclui botão dedicado para **“Atualizar Orçamento”** e **“Gerar PDF”** diretamente na tela de edição.
+  - Mantém layout e estilo consistentes com `ttkbootstrap`.
+
+### Changed
+
+* O método **`carregar_orcamento_para_edicao()`** foi reescrito para gerar dinamicamente a nova aba “Editar Orçamento”.
+* O método **`visualizar_orcamento()`** foi ajustado para abrir o orçamento selecionado na aba de edição, em vez de reutilizar a aba de criação.
+* Lógica de atualização e salvamento aprimorada para reutilizar métodos já existentes, evitando duplicação de código.
+* Organização visual das seções de cabeçalho, itens e totais aprimorada, garantindo clareza entre modos de criação e edição.
+
+### Fixed
+
+* Corrigido comportamento em que a aba de novo orçamento era sobrescrita ao editar um orçamento existente.
+* Garantido que o fechamento da aba de edição não afete dados em edição na aba de criação.
+* Ajustes menores no carregamento de informações de clientes e empresas vinculadas durante a edição.
+
+---
+
 ## [1.4.1] - 09/Out/25
 
 ### Changed
