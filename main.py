@@ -928,6 +928,7 @@ class SistemaPedidos:
     def carregar_orcamento_para_edicao(self, numero_pedido):
         """
         Carrega um orçamento salvo para edição em uma nova aba separada.
+        Permite editar dados, adicionar/remover produtos e recalcula impostos e totais.
         """
         # Remove aba antiga de edição se já existir
         for i, tab_id in enumerate(self.notebook.tabs()):
@@ -1038,38 +1039,114 @@ class SistemaPedidos:
                 f"{codigo} - {descricao}", qtd, formatar_moeda(valor_unit), formatar_moeda(total_item)
             ))
 
-        # --- Totais e ações ---
+        # === Cálculo de totais ===
+        def atualizar_totais_edit():
+            subtotal = sum(i['qtd'] * i['valor'] for i in itens_temp)
+            total_icms = total_ipi = total_pis = total_cofins = 0
+            for item in itens_temp:
+                self.cursor.execute('SELECT aliq_icms, aliq_ipi, aliq_pis, aliq_cofins FROM produtos WHERE id=?', (item['produto_id'],))
+                icms, ipi, pis, cofins = self.cursor.fetchone()
+                base = item['qtd'] * item['valor']
+                total_icms   += base * (icms or 0)
+                total_ipi    += base * (ipi or 0)
+                total_pis    += base * (pis or 0)
+                total_cofins += base * (cofins or 0)
+            total_impostos = total_icms + total_ipi + total_pis + total_cofins
+            desconto_val = float(entry_desc.get() or 0)
+            total_geral = subtotal + total_impostos - desconto_val
+
+            label_subtotal_edit.config(text=f"Subtotal: {formatar_moeda(subtotal)}")
+            label_impostos_edit.config(text=f"Impostos: {formatar_moeda(total_impostos)}")
+            label_total_edit.config(text=f"TOTAL: {formatar_moeda(total_geral)}")
+
+        # --- Controles para adicionar/remover itens ---
+        frame_add_item = tb.Frame(frame_itens)
+        frame_add_item.pack(fill='x', pady=5)
+
+        tb.Label(frame_add_item, text="Produto:").pack(side='left', padx=5)
+        combo_prod_edit = tb.Combobox(frame_add_item, width=60)
+        self.cursor.execute("SELECT id, codigo, descricao FROM produtos")
+        produtos = [f"{pid} - {cod} - {desc}" for pid, cod, desc in self.cursor.fetchall()]
+        combo_prod_edit['values'] = produtos
+        combo_prod_edit.pack(side='left', padx=5)
+
+        tb.Label(frame_add_item, text="Qtd:").pack(side='left', padx=5)
+        entry_qtd_edit = tb.Entry(frame_add_item, width=8)
+        entry_qtd_edit.pack(side='left', padx=5)
+
+        def adicionar_item_edit():
+            try:
+                prod_str = combo_prod_edit.get()
+                if not prod_str:
+                    messagebox.showwarning("Atenção", "Selecione um produto!")
+                    return
+                prod_id = int(prod_str.split(" - ")[0])
+                qtd = float(entry_qtd_edit.get() or 1)
+
+                # Buscar produto no banco
+                self.cursor.execute("SELECT codigo, descricao, valor_unitario FROM produtos WHERE id=?", (prod_id,))
+                prod = self.cursor.fetchone()
+                if not prod:
+                    messagebox.showerror("Erro", "Produto não encontrado.")
+                    return
+
+                cod, desc, valor = prod
+
+                # Verifica se o produto já existe na lista temporária
+                existente = next((i for i in itens_temp if i['produto_id'] == prod_id), None)
+                if existente:
+                    # Já existe: soma a quantidade e atualiza no treeview
+                    existente['qtd'] += qtd
+                    for iid in tree_itens.get_children():
+                        valores = tree_itens.item(iid, 'values')
+                        if valores[0] == f"{cod} - {desc}":
+                            novo_total = existente['qtd'] * existente['valor']
+                            tree_itens.item(iid, values=(
+                                f"{cod} - {desc}",
+                                existente['qtd'],
+                                formatar_moeda(existente['valor']),
+                                formatar_moeda(novo_total)
+                            ))
+                            break
+                else:
+                    # Não existe: adiciona novo
+                    total_item = qtd * valor
+                    itens_temp.append({'produto_id': prod_id, 'codigo': cod, 'descricao': desc, 'qtd': qtd, 'valor': valor})
+                    tree_itens.insert('', 'end', values=(
+                        f"{cod} - {desc}", qtd, formatar_moeda(valor), formatar_moeda(total_item)
+                    ))
+
+                atualizar_totais_edit()
+
+            except Exception as e:
+                messagebox.showerror("Erro", f"Falha ao adicionar item: {e}")
+
+        def remover_item_edit():
+            sel = tree_itens.selection()
+            if not sel:
+                messagebox.showwarning("Atenção", "Selecione um item para remover.")
+                return
+            for s in sel:
+                valores = tree_itens.item(s, 'values')
+                desc = valores[0]
+                itens_temp[:] = [i for i in itens_temp if f"{i['codigo']} - {i['descricao']}" != desc]
+                tree_itens.delete(s)
+            atualizar_totais_edit()
+
+        tb.Button(frame_add_item, text="Adicionar Item", bootstyle="success", command=adicionar_item_edit).pack(side='left', padx=5)
+        tb.Button(frame_add_item, text="Remover Item", bootstyle="danger", command=remover_item_edit).pack(side='left', padx=5)
+
+        # --- Totais ---
         frame_totais = tb.Labelframe(aba_editar, text="Totais & Ações", bootstyle="warning", padding=8)
         frame_totais.pack(fill='x', padx=10, pady=5)
 
-        label_total = tb.Label(frame_totais, text=f"TOTAL: {formatar_moeda(total)}",
-                            font=('Segoe UI', 11, 'bold'), bootstyle="success")
-        label_total.pack(side="left", padx=8)
-
-        def atualizar_orcamento():
-            try:
-                cliente_id_sel = int(combo_cliente.get().split(" - ")[0])
-                status_sel = combo_status.get()
-                repr_sel = entry_repr.get()
-                cond_pag = cond_pag_entry.get()
-                validade = entry_validade.get()
-                desconto_val = float(entry_desc.get() or 0)
-                obs_texto = txt_obs.get("1.0", tk.END).strip()
-
-                self.cursor.execute('''
-                    UPDATE pedidos
-                    SET cliente_id=?, representante=?, condicoes_pagamento=?, desconto=?, observacoes=?, validade=?, status=?
-                    WHERE numero_pedido=?
-                ''', (cliente_id_sel, repr_sel, cond_pag, desconto_val, obs_texto, validade, status_sel, numero_pedido))
-                self.conn.commit()
-                messagebox.showinfo("Sucesso", f"Orçamento {numero_pedido} atualizado com sucesso!")
-                self.buscar_orcamento()
-            except Exception as e:
-                messagebox.showerror("Erro", f"Erro ao atualizar: {e}")
-
-        tb.Button(frame_totais, text="Atualizar Orçamento", bootstyle="success", command=atualizar_orcamento).pack(side="right", padx=8)
-        tb.Button(frame_totais, text="Gerar PDF", bootstyle="danger-outline",
-                command=lambda: self.gerar_pdf_orcamento(numero_pedido)).pack(side="right", padx=8)
+        label_subtotal_edit = tb.Label(frame_totais, text="Subtotal: R$ 0,00", bootstyle="secondary")
+        label_subtotal_edit.grid(row=0, column=0, padx=8)
+        label_impostos_edit = tb.Label(frame_totais, text="Impostos: R$ 0,00", bootstyle="secondary")
+        label_impostos_edit.grid(row=0, column=1, padx=8)
+        label_total_edit = tb.Label(frame_totais, text=f"TOTAL: {formatar_moeda(total)}",
+                                    font=('Segoe UI', 11, 'bold'), bootstyle="success")
+        label_total_edit.grid(row=0, column=2, padx=8)
 
         # --- Informações adicionais ---
         frame_extra = tb.Labelframe(aba_editar, text="Informações Comerciais", bootstyle="secondary", padding=8)
@@ -1095,6 +1172,42 @@ class SistemaPedidos:
         txt_obs.grid(row=2, column=1, columnspan=3, padx=5)
         txt_obs.insert("1.0", observacoes or "")
 
+        def atualizar_orcamento():
+            try:
+                cliente_id_sel = int(combo_cliente.get().split(" - ")[0])
+                status_sel = combo_status.get()
+                repr_sel = entry_repr.get()
+                cond_pag_val = cond_pag_entry.get()
+                validade_val = entry_validade.get()
+                desconto_val = float(entry_desc.get() or 0)
+                obs_texto = txt_obs.get("1.0", tk.END).strip()
+
+                self.cursor.execute('''
+                    UPDATE pedidos
+                    SET cliente_id=?, representante=?, condicoes_pagamento=?, desconto=?, observacoes=?, validade=?, status=?
+                    WHERE numero_pedido=?
+                ''', (cliente_id_sel, repr_sel, cond_pag_val, desconto_val, obs_texto, validade_val, status_sel, numero_pedido))
+
+                # Atualiza os itens do orçamento
+                self.cursor.execute("DELETE FROM pedido_itens WHERE numero_pedido=?", (numero_pedido,))
+                for item in itens_temp:
+                    self.cursor.execute('''
+                        INSERT INTO pedido_itens (numero_pedido, produto_id, qtd, valor_unitario)
+                        VALUES (?, ?, ?, ?)
+                    ''', (numero_pedido, item['produto_id'], item['qtd'], item['valor']))
+
+                self.conn.commit()
+                messagebox.showinfo("Sucesso", f"Orçamento {numero_pedido} atualizado com sucesso!")
+                self.buscar_orcamento()
+            except Exception as e:
+                messagebox.showerror("Erro", f"Erro ao atualizar: {e}")
+
+        tb.Button(frame_totais, text="Atualizar Orçamento", bootstyle="success", command=atualizar_orcamento).grid(row=0, column=3, padx=8)
+        tb.Button(frame_totais, text="Gerar PDF", bootstyle="danger-outline",
+                command=lambda: self.gerar_pdf_orcamento(numero_pedido)).grid(row=0, column=4, padx=8)
+
+        # Calcula os totais iniciais
+        atualizar_totais_edit()
 
     def remover_item(self):
         selecionado = self.tree_pedido_items.selection()
