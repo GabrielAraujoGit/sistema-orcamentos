@@ -1707,6 +1707,20 @@ class SistemaPedidos:
             # === Criar documento ===
             doc = SimpleDocTemplate(caminho_pdf, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=30)
             story = []
+
+            # Buscar logo da empresa
+            self.cursor.execute("SELECT caminho_logo FROM empresas WHERE id=?", (empresa_id,))
+            resultado = self.cursor.fetchone()
+            if resultado and resultado[0]:
+                logo_path = resultado[0]
+                if os.path.exists(logo_path):
+                    try:
+                        logo = PDFImage(logo_path, width=120, height=50)  # ajuste o tamanho conforme o layout
+                        story.append(logo)
+                        story.append(Spacer(1, 10))
+                    except Exception as e:
+                        print(f"Erro ao carregar logo: {e}")
+
             styles = getSampleStyleSheet()
             estilo_normal = styles["Normal"]
             dados_cabecalho = []
@@ -2147,67 +2161,136 @@ class SistemaPedidos:
         os.startfile(nome_arquivo)
 
     def abrir_formulario_empresa(self, empresa=None):
+       
+
         top = tk.Toplevel(self.root)
-        top.title("Cadastro de Empresa")
-        top.geometry("650x420")
-        # Estrutura de campos
-        labels = ['Nome:', 'CNPJ:', 'IE:', 'CEP:', 'Endereço:', 'Cidade:', 'Estado:', 'Telefone:', 'Email:']
+        top.title("Cadastro de Empresa Emissora")
+        top.geometry("700x620")
+        top.resizable(False, False)
+        top.focus_force()
+
+        # === Frame rolável ===
+        canvas = tk.Canvas(top)
+        scrollbar = ttk.Scrollbar(top, orient="vertical", command=canvas.yview)
+        scroll_frame = ttk.Frame(canvas)
+
+        scroll_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # === Campos ===
+        labels = [
+            "Nome:", "CNPJ:", "IE:", "CEP:", "Endereço:",
+            "Cidade:", "Estado:", "Telefone:", "Email:"
+        ]
         entries = {}
 
         for i, label in enumerate(labels):
-            ttk.Label(top, text=label).grid(row=i//2, column=(i%2)*2, sticky='w', padx=5, pady=5)
-            entry = ttk.Entry(top, width=28)
-            entry.grid(row=i//2, column=(i%2)*2+1, padx=5, pady=5, sticky="ew")
-            chave = normalizar_chave(label)
-            entries[chave] = entry
+            ttk.Label(scroll_frame, text=label).grid(row=i, column=0, sticky="w", padx=8, pady=5)
+            entry = ttk.Entry(scroll_frame, width=45)
+            entry.grid(row=i, column=1, padx=5, pady=5, sticky="w")
+            entries[normalizar_chave(label)] = entry
 
-        # 🔍 Busca automática do endereço pelo CEP
-        entry_cep = entries["cep"]
-        entry_cep.bind("<FocusOut>", lambda e: self.buscar_cep(entry_cep.get(), entries))
+        # --- Campo da logo ---
+        ttk.Label(scroll_frame, text="Logo:").grid(row=len(labels), column=0, sticky="w", padx=8, pady=5)
+        entry_logo = ttk.Entry(scroll_frame, width=45)
+        entry_logo.grid(row=len(labels), column=1, padx=5, pady=5, sticky="w")
+        entries["caminho_logo"] = entry_logo
 
-        # Preenche campos se for edição
+        # --- Área de preview ---
+        frame_preview = tk.Frame(scroll_frame, bg="#f0f0f0", bd=1, relief="solid")
+        frame_preview.grid(row=len(labels) + 1, column=0, columnspan=3, padx=10, pady=(8, 15))
+        logo_preview = tk.Label(frame_preview, bg="#f0f0f0", text="(pré-visualização)")
+        logo_preview.pack(padx=10, pady=10)
+
+        def atualizar_preview(caminho):
+            try:
+                if os.path.exists(caminho):
+                    img = Image.open(caminho)
+                    img.thumbnail((350, 180))
+                    img_tk = ImageTk.PhotoImage(img)
+                    logo_preview.config(image=img_tk, text="")
+                    logo_preview.image = img_tk
+                else:
+                    logo_preview.config(image="", text="(Imagem não encontrada)")
+            except Exception as e:
+                logo_preview.config(image="", text=f"Erro: {e}")
+
+        def selecionar_logo():
+            top.attributes('-topmost', False)
+            caminho = filedialog.askopenfilename(
+                parent=top,
+                title="Selecione a logo da empresa",
+                filetypes=[("Imagens", "*.png;*.jpg;*.jpeg;*.bmp;*.gif")]
+            )
+            top.attributes('-topmost', True)
+            top.focus_force()
+            if caminho:
+                entry_logo.delete(0, tk.END)
+                entry_logo.insert(0, caminho)
+                atualizar_preview(caminho)
+
+        ttk.Button(scroll_frame, text="Selecionar Logo", command=selecionar_logo).grid(
+            row=len(labels), column=2, padx=5, pady=5
+        )
+
+        # --- Preencher dados se for edição ---
         if empresa:
-            keys = ['id', 'nome', 'cnpj', 'ie', 'cep', 'endereco', 'cidade', 'estado', 'telefone', 'email']
-            for k, v in zip(keys, empresa):
+            campos = [
+                "id", "nome", "cnpj", "ie", "endereco", "cidade", "estado",
+                "cep", "telefone", "email", "caminho_logo"
+            ]
+            for k, v in zip(campos, empresa):
                 if k in entries:
                     entries[k].insert(0, v or "")
+            if empresa[-1]:
+                atualizar_preview(empresa[-1])
 
-        def salvar():
+        # --- Botão Salvar ---
+        def salvar_empresa():
             dados = {k: v.get().strip() for k, v in entries.items()}
-            campos_obrigatorios = {"nome": "Nome", "cnpj": "CNPJ"}
-            faltando = [nome for chave, nome in campos_obrigatorios.items() if not dados.get(chave)]
-
-            if faltando:
-                messagebox.showwarning("Atenção", f"Preencha os campos obrigatórios: {', '.join(faltando)}")
+            if not dados.get("nome"):
+                messagebox.showwarning("Atenção", "O nome da empresa é obrigatório!")
                 return
-
             try:
                 if empresa:
-                    self.cursor.execute('''
-                        UPDATE empresas
-                        SET nome=?, cnpj=?, ie=?, cep=?, endereco=?, cidade=?, estado=?, telefone=?, email=?
-                        WHERE id=?
-                    ''', (
-                        dados['nome'], dados['cnpj'], dados.get('ie'), dados.get('cep'), dados.get('endereco'),
-                        dados.get('cidade'), dados.get('estado'), dados.get('telefone'), dados.get('email'), empresa[0]
+                    self.cursor.execute("""
+                        UPDATE empresas SET nome=?, cnpj=?, ie=?, endereco=?, cidade=?, estado=?,
+                            cep=?, telefone=?, email=?, caminho_logo=? WHERE id=?
+                    """, (
+                        dados["nome"], dados.get("cnpj"), dados.get("ie"),
+                        dados.get("endereco"), dados.get("cidade"),
+                        dados.get("estado"), dados.get("cep"),
+                        dados.get("telefone"), dados.get("email"),
+                        dados.get("caminho_logo"), empresa[0]
                     ))
                 else:
-                    self.cursor.execute('''
-                        INSERT INTO empresas (nome, cnpj, ie, cep, endereco, cidade, estado, telefone, email)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        dados['nome'], dados['cnpj'], dados.get('ie'), dados.get('cep'), dados.get('endereco'),
-                        dados.get('cidade'), dados.get('estado'), dados.get('telefone'), dados.get('email')
+                    self.cursor.execute("""
+                        INSERT INTO empresas (nome, cnpj, ie, endereco, cidade, estado,
+                                            cep, telefone, email, caminho_logo)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        dados["nome"], dados.get("cnpj"), dados.get("ie"),
+                        dados.get("endereco"), dados.get("cidade"),
+                        dados.get("estado"), dados.get("cep"),
+                        dados.get("telefone"), dados.get("email"),
+                        dados.get("caminho_logo")
                     ))
                 self.conn.commit()
                 self.carregar_empresas()
                 top.destroy()
-            except sqlite3.IntegrityError:
-                messagebox.showerror("Erro", "CNPJ já cadastrado!")
+                messagebox.showinfo("Sucesso", "Empresa salva com sucesso!")
             except Exception as e:
                 messagebox.showerror("Erro", f"Erro ao salvar empresa: {e}")
 
-        ttk.Button(top, text="Salvar", bootstyle=SUCCESS, command=salvar).grid(row=6, column=0, columnspan=2, pady=10)
+        ttk.Button(scroll_frame, text="Salvar", command=salvar_empresa, bootstyle="success").grid(
+            row=len(labels) + 2, column=0, columnspan=3, pady=15
+        )
+
+
 
     def carregar_empresas(self):
         try:
