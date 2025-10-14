@@ -869,6 +869,8 @@ class SistemaPedidos:
         tb.Label(top_frame, text="Produto:").grid(row=1, column=0, sticky=W, padx=5)
         self.combo_produto = tb.Combobox(top_frame, width=60, state='normal')
         self.combo_produto.grid(row=1, column=1, padx=5, columnspan=3)
+        self.combo_produto.bind('<KeyRelease>', self.filtrar_produtos)
+
         tb.Label(top_frame, text="Quantidade:").grid(row=1, column=4, sticky=W, padx=5)
         self.entry_qtd = tb.Entry(top_frame, width=8)
         self.entry_qtd.grid(row=1, column=5, padx=5)
@@ -1232,13 +1234,33 @@ class SistemaPedidos:
         self.cursor.execute('SELECT id, razao_social FROM clientes')
         clientes = [f"{row[0]} - {row[1]}" for row in self.cursor.fetchall()]
         self.combo_cliente['values'] = clientes     
-        self.cursor.execute('SELECT id, codigo, descricao FROM produtos')
-        produtos = [f"{row[0]} - {row[1]} - {row[2]}" for row in self.cursor.fetchall()]
+        
+        self.cursor.execute("SELECT descricao FROM produtos ORDER BY descricao")
+        produtos = [r[0] for r in self.cursor.fetchall()]
+        self.lista_produtos = produtos  # salva para filtrar depois
         self.combo_produto['values'] = produtos
+
         # carregar empresas
         self.cursor.execute('SELECT id, nome FROM empresas')
         empresas = [f"{row[0]} - {row[1]}" for row in self.cursor.fetchall()]
         self.combo_empresa['values'] = empresas
+
+    
+    def filtrar_produtos(self, event):
+        texto = self.combo_produto.get().lower()
+        if texto:
+            # Filtra produtos que contêm o texto digitado
+            filtrados = [p for p in self.lista_produtos if texto in p.lower()]
+            self.combo_produto['values'] = filtrados
+
+            if filtrados:
+                # Exibe sugestão (primeiro item) sem sobrescrever o que o usuário digitou
+                self.combo_produto.event_generate('<Down>')  # abre dropdown para mostrar sugestões
+        else:
+            # Campo vazio, mostra todos os produtos
+            self.combo_produto['values'] = self.lista_produtos
+
+
 
     def filtrar_clientes(self, event=None):
         texto = self.combo_cliente.get().lower()
@@ -1461,19 +1483,27 @@ class SistemaPedidos:
         ttk.Button(frame_botoes, text="Fechar", command=top.destroy).pack(side="right", padx=5)
         
     def limpar_pedido(self):
+        # Limpa todos os itens da tree
         for item in self.tree_pedido_items.get_children():
             self.tree_pedido_items.delete(item)
-            self.itens_pedido_temp = []
-            self.atualizar_totais()
-            self.combo_cliente.set('')
-            self.combo_produto.set('')
-            self.entry_qtd.delete(0, tk.END)
 
+        # Reseta lista temporária e atualiza totais
+        self.itens_pedido_temp = []
+        self.atualizar_totais()
+
+        # Reseta campos de input
+        self.combo_cliente.set('')
+        self.combo_produto.set('')
+        self.entry_qtd.delete(0, tk.END)
+
+        # Esconde status do orçamento, se existir
         try:
             self.label_status_orc.grid_forget()
             self.combo_status_orc.grid_forget()
         except:
             pass
+
+        # Esconde número do orçamento, se existir
         try:
             self.label_numero_orc_lbl.grid_forget()
             self.label_numero_orc.grid_forget()
@@ -2183,6 +2213,9 @@ class SistemaPedidos:
             entry = ttk.Entry(scroll_frame, width=45)
             entry.grid(row=i, column=1, padx=5, pady=5, sticky="w")
             entries[normalizar_chave(label)] = entry
+        
+        entries["cep"].bind("<FocusOut>", lambda e: self.buscar_cep(entries["cep"].get(), entries))
+
 
         # --- Campo da logo ---
         ttk.Label(scroll_frame, text="Logo:").grid(row=len(labels), column=0, sticky="w", padx=8, pady=5)
