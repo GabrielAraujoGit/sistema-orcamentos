@@ -1,94 +1,138 @@
-# 💼 Sistema de Orçamentos
+# Sistema de Orçamentos — Eletrofrio
 
-Aplicação em **Python (Tkinter + SQLite)** para cadastro de clientes, produtos e geração de orçamentos em **PDF** e **Excel**.
-
----
-
-## 🚀 Funcionalidades
-
-- Cadastro, edição, exclusão e importação de **clientes** e **produtos**.  
-- Criação e edição de **orçamentos** com controle de status:  
-  *Em Aberto*, *Aprovado*, *Cancelado*, *Rejeitado*.  
-- Consulta avançada de orçamentos por filtros (**número**, **cliente**, **representante**, **status**, **período**).  
-- Exportação de orçamentos em **PDF padronizado** e **Excel (.xlsx)**.  
-- Banco de dados **SQLite (`pedidos.db`)** gerado automaticamente.  
+**Versão atual:** v1.0.0  
+**Manutenção interna:** Área de TI / Sistemas
 
 ---
 
-## 🧩 Requisitos
-
-- Python **3.10+**
-- Dependências listadas em `requirements.txt`:
-  - `openpyxl`
-  - `reportlab`
-  - `ttkbootstrap`
+## 📋 Sumário  
+1. [Visão Geral](#visão-geral)  
+2. [Funcionalidades](#funcionalidades)  
+3. [Fluxo de Uso (Exemplo)](#fluxo-de-uso-exemplo)  
+4. [Instalação & Execução](#instalação--execução)  
+5. [Estrutura do Projeto](#estrutura-do-projeto)  
+6. [Exemplos de Saída](#exemplos-de-saída)  
+7. [Contribuição & Padrões](#contribuição--padrões)  
+8. [Backup & Migração de Dados](#backup--migração-de-dados)  
+9. [Contatos / Suporte Interno](#contatos--suporte-interno)
 
 ---
 
-## ⚙️ Instalação
+## Visão Geral  
 
-Clone o repositório:
+Aplicação interna desenvolvida em **Python (Tkinter + SQLite)** para **gestão de orçamentos comerciais** da Eletrofrio.  
+Centraliza cadastros de clientes e produtos, gera documentos padronizados e mantém histórico local de orçamentos.  
+
+Principais objetivos:
+- Reduzir retrabalho e erros manuais;  
+- Padronizar a emissão de orçamentos;  
+- Facilitar consultas e controle de status;  
+- Permitir exportação em formatos oficiais (PDF/Excel).  
+
+---
+
+## Funcionalidades  
+
+- Cadastro, edição e exclusão de **clientes** e **produtos**;  
+- Emissão e controle de **orçamentos comerciais**;  
+- Status configuráveis: *Aberto*, *Aprovado*, *Cancelado*, *Rejeitado*;  
+- Filtros avançados por **cliente**, **representante**, **status**, **período**;  
+- Exportação para **PDF padronizado** e **Excel (.xlsx)**;  
+- Banco de dados **SQLite (`pedidos.db`)** criado automaticamente.  
+
+---
+
+## Fluxo de Uso (Exemplo)  
+
+1. Abrir o sistema (`python main.py`);  
+2. Cadastrar ou importar clientes e produtos;  
+3. Criar um novo orçamento e adicionar itens;  
+4. Exportar o documento em PDF ou Excel;  
+5. Atualizar o status conforme aprovação ou cancelamento.  
+
+---
+
+## Instalação & Execução  
+
+### Requisitos  
+
+- **Python 3.10+**  
+- Dependências listadas em `requirements.txt`:  
+  - `openpyxl`  
+  - `reportlab`  
+  - `ttkbootstrap`  
+
+### Instalação  
 
 ```bash
-git clone https://github.com/SEU_USUARIO/sistema-orcamentos.git
+git clone https://github.com/eletrofrio/sistema-orcamentos.git
 cd sistema-orcamentos
-```
-
-Crie um ambiente virtual (opcional, recomendado):
-
-```bash
 python -m venv venv
 venv\Scripts\activate     # Windows
-source venv/bin/activate  # Linux/Mac
-```
-
-Instale as dependências:
-
-```bash
+source venv/bin/activate   # Linux/Mac
 pip install -r requirements.txt
 ```
 
----
-
-## ▶️ Uso
+### Execução  
 
 ```bash
 python main.py
 ```
 
-A interface gráfica será aberta com abas para **Clientes**, **Produtos**, **Orçamentos** e **Consulta de Orçamentos**.
+A interface gráfica será aberta com abas para **Clientes**, **Produtos**, **Orçamentos** e **Consultas**.
 
 ---
 
-## 🗂️ Estrutura do Projeto
+## Estrutura do Projeto  
 
 ```
 sistema-orcamentos/
 │
-├── main.py              # Código principal
-├── requirements.txt     # Dependências do projeto
-├── pedidos.db           # Banco SQLite (gerado automaticamente)
-├── docs/
-│   └── images/          # Prints de tela (opcional)
-└── arquivos_exportados/ # PDFs e planilhas .xlsx geradas
+├── main.py               # Ponto de entrada da aplicação
+├── requirements.txt      # Dependências do projeto
+├── pedidos.db            # Banco SQLite (gerado automaticamente)
+├── utils/                # Funções auxiliares
+├── assets/               # Imagens e logotipos internos
+├── arquivos_exportados/  # PDFs e planilhas .xlsx geradas
+└── docs/
+    └── images/           # Capturas de tela e documentação técnica
 ```
 
 ---
 
-## 📸 Interface
+## Exemplos de Saída  
 
-### Tela de Clientes
-<img width="1677" height="965" alt="image" src="https://github.com/user-attachments/assets/69945def-8a5c-46a0-bf45-ba9377eea2da" />
+### Tela de Clientes  
+![Tela de Clientes](https://github.com/user-attachments/assets/69945def-8a5c-46a0-bf45-ba9377eea2da)
 
+### Tela de Produtos  
+![Tela de Produtos](https://github.com/user-attachments/assets/64821873-58b2-491f-b243-265c946b724f)
 
-### Tela de Produtos
-<img width="1679" height="972" alt="image" src="https://github.com/user-attachments/assets/64821873-58b2-491f-b243-265c946b724f" />
-
-
-### Tela de Orçamentos
-<img width="1676" height="969" alt="image" src="https://github.com/user-attachments/assets/40edfe8e-5ab7-4a93-af85-6f62e011f55f" />
-
+### Tela de Orçamentos  
+![Tela de Orçamentos](https://github.com/user-attachments/assets/40edfe8e-5ab7-4a93-af85-6f62e011f55f)
 
 ---
 
+## Contribuição & Padrões  
 
+- Seguir convenção **PEP8**;  
+- Nomear commits conforme padrão: `feat/`, `fix/`, `docs/`, `refactor/`;  
+- Alterações relevantes devem ser registradas no changelog;  
+- Atualizar `version.json` antes de cada release interna.  
+
+---
+
+## Backup & Migração de Dados  
+
+- O banco local `pedidos.db` deve ser incluído nos backups periódicos da estação;  
+- Antes de atualizar versões, recomenda-se exportar os dados para Excel;  
+- As migrações de estrutura (schema) devem ser documentadas no diretório `/docs/migrations/`.  
+
+---
+
+## Contatos / Suporte Interno  
+
+**Responsável técnico:** Gabriel Araújo  
+**Departamento:** TI – Eletrofrio  
+**Status do projeto:** Em uso interno / manutenção contínua  
+**Última atualização:** Outubro de 2025  
