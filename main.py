@@ -1277,55 +1277,49 @@ class SistemaPedidos:
 
     def adicionar_item_pedido(self):
         try:
-            produto_str = self.combo_produto.get()
-            if not produto_str:
+            produto_nome = self.combo_produto.get().strip()
+            if not produto_nome:
                 messagebox.showwarning("Atenção", "Selecione um produto!")
                 return
 
-            produto_id = int(produto_str.split(" - ")[0])
-            qtd = float(self.entry_qtd.get() or 1)
-
-            self.cursor.execute("SELECT codigo, descricao, valor_unitario FROM produtos WHERE id = ?", (produto_id,))
+            # Buscar produto no banco pelo nome
+            self.cursor.execute("SELECT id, codigo, descricao, valor_unitario FROM produtos WHERE descricao = ?", (produto_nome,))
             produto = self.cursor.fetchone()
             if not produto:
                 messagebox.showerror("Erro", "Produto não encontrado.")
                 return
 
-            codigo, descricao, preco_venda = produto
+            produto_id, codigo, descricao, preco_venda = produto
+            qtd = float(self.entry_qtd.get() or 1)
 
             # Verifica se já existe o mesmo produto na lista
-            encontrado = False
-            for item in self.itens_pedido_temp:
-                if item["produto_id"] == produto_id:
-                    # Atualiza quantidade e recalcula
-                    item["qtd"] += qtd
-                    encontrado = True
-                    break
-
-            if not encontrado:
-                # adiciona novo item
+            existente = next((i for i in self.itens_pedido_temp if i['produto_id'] == produto_id), None)
+            if existente:
+                existente['qtd'] += qtd
+            else:
                 self.itens_pedido_temp.append({
                     "produto_id": produto_id,
                     "codigo": codigo,
                     "descricao": descricao,
                     "qtd": qtd,
-                    "valor": float(preco_venda or 0)
+                    "valor": preco_venda
                 })
-            # Atualiza visualização na treeview
+
+            # Atualizar treeview
             self.tree_pedido_items.delete(*self.tree_pedido_items.get_children())
             for item in self.itens_pedido_temp:
-                total_item = item["qtd"] * item["valor"]
-                self.tree_pedido_items.insert(
-                    "", "end",
-                    values=(f"{item['codigo']} - {item['descricao']}",
-                            item["qtd"],
-                            formatar_moeda(item["valor"]),
-                            formatar_moeda(total_item))
-                )
+                total_item = item['qtd'] * item['valor']
+                self.tree_pedido_items.insert('', 'end', values=(
+                    f"{item['codigo']} - {item['descricao']}",
+                    item['qtd'],
+                    formatar_moeda(item['valor']),
+                    formatar_moeda(total_item)
+                ))
 
             self.atualizar_totais()
         except Exception as e:
             messagebox.showerror("Erro", f"Falha ao adicionar item: {e}")
+
 
     def atualizar_totais(self):
         subtotal = sum(item['qtd'] * item['valor'] for item in self.itens_pedido_temp)
