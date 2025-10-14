@@ -1,4 +1,4 @@
-# Sistema de Orçamentos — Eletrofrio
+# EletroFlow — Sistema Interno de Orçamentos
 
 **Versão atual:** v1.0.0  
 **Manutenção interna:** Área de TI / Sistemas
