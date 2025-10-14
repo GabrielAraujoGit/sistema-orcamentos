@@ -2346,8 +2346,9 @@ class SistemaPedidos:
             return
         try:
             for item in sel:
-                vals = self.tree_empresas.item(item, 'values')
-                self.cursor.execute("DELETE FROM empresas WHERE id=?", (vals[0],))
+                empresa_id = self.tree_empresas.item(item, 'tags')[0]
+                self.cursor.execute("DELETE FROM empresas WHERE id=?", (empresa_id,))
+
             self.conn.commit()
             self.carregar_empresas()
             self.carregar_combos_pedido()
