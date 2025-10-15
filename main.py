@@ -27,6 +27,7 @@ from PIL import Image, ImageTk
 from reportlab.platypus import Table, TableStyle, Image as PDFImage, Paragraph, Spacer
 from reportlab.lib import colors
 import requests
+from updater import verificar_atualizacao_visual
 
 def formatar_cnpj(cnpj):
     c = ''.join(filter(str.isdigit, str(cnpj)))
@@ -78,7 +79,7 @@ def normalizar_chave(texto):
 class SistemaPedidos:
     def __init__(self, root):
         self.root = root
-        self.root.title("Sistema de Orçamentos")
+        self.root.title("EletroFlow")
         self.root.geometry("1200x700")
         
         # Inicializar banco de dados
@@ -320,16 +321,16 @@ class SistemaPedidos:
         btn_frame = ttk.Frame(frame)
         btn_frame.pack(fill='x', padx=10, pady=5)
 
-        ttk.Button(btn_frame, text="Adicionar", bootstyle=SUCCESS, command=self.adicionar_cliente).pack(side='left', padx=5 )
+        ttk.Button(btn_frame, text="Adicionar", bootstyle=SUCCESS, command=self.adicionar_cliente).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Editar", bootstyle=INFO, command=lambda: self.editar_cliente(None)).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Excluir", bootstyle=DANGER, command=self.excluir_cliente).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Importar Arquivo", bootstyle=WARNING, command=lambda: self.importar_dados("clientes")).pack(side='left', padx=5)
-    
-        # --- Lista de clientes ---nu
+
+        # --- Lista de clientes ---
         list_frame = ttk.LabelFrame(frame, text="Clientes Cadastrados", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=10)
 
-        cols = ('Razão Social', 'CNPJ', 'Cidade', 'Telefone')
+        cols = ('ID', 'Razão Social', 'CNPJ', 'Cidade', 'Telefone')
         self.tree_clientes = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
         for col in cols:
             self.tree_clientes.heading(col, text=col)
@@ -340,15 +341,15 @@ class SistemaPedidos:
         self.tree_clientes.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
 
-                # Permitir copiar célula
+        # Permitir copiar célula
         self.tree_clientes.bind("<Control-c>", self.copiar_celula_treeview)
         self.tree_clientes.bind("<Control-Double-1>", self.copiar_celula_treeview, add='+')
-
 
         # Duplo clique abre visualização
         self.tree_clientes.bind("<Double-1>", self.visualizar_cliente)
 
         self.carregar_clientes()
+
 
     def abrir_formulario_cliente(self, cliente=None):
         """Abre popup para adicionar/editar cliente."""
@@ -637,6 +638,7 @@ class SistemaPedidos:
     def carregar_clientes(self, filtro=""):
         for item in self.tree_clientes.get_children():
             self.tree_clientes.delete(item)
+
         if filtro:
             self.cursor.execute('''
                 SELECT id, razao_social, cnpj, cidade, telefone 
@@ -644,9 +646,11 @@ class SistemaPedidos:
                 WHERE razao_social LIKE ? OR cnpj LIKE ?
             ''', (f'%{filtro}%', f'%{filtro}%'))
         else:
-            self.cursor.execute('SELECT razao_social, cnpj, cidade, telefone FROM clientes')
+            self.cursor.execute('SELECT id, razao_social, cnpj, cidade, telefone FROM clientes')
+
         for row in self.cursor.fetchall():
             self.tree_clientes.insert('', 'end', values=row)
+
 
     def editar_cliente(self, event=None):
         item = self.tree_clientes.selection()
@@ -2358,8 +2362,9 @@ class SistemaPedidos:
             if hasattr(self, 'conn'):
                 self.conn.close()
 
-if __name__ == "__main__":      
+if __name__ == "__main__":
     root = tb.Window(themename="solar")
     app = SistemaPedidos(root)
+    # Checa atualização automaticamente 2 segundos após iniciar
+    root.after(2000, lambda: verificar_atualizacao_visual(root))
     root.mainloop()
-    
