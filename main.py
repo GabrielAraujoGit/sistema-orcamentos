@@ -795,7 +795,7 @@ class SistemaPedidos:
             return
         valores = self.tree_produtos.item(item[0], "values")
         produto_id = valores[0]
-        self.cursor.execute("SELECT * FROM produtos WHERE id=?", (produto_id,))
+        self.cursor.execute("SELECT * FROM produtos WHERE codigo=?", (produto_id,))
         produto = self.cursor.fetchone()
         if produto:
             self.abrir_formulario_produto(produto)

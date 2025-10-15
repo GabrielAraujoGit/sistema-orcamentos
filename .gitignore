@@ -41,7 +41,8 @@ pnpm-lock.yaml
 
 # Relatórios de testes
 /coverage
-
+.pdf
+* .pdf
 # Mac/Linux
 .DS_Store
 Thumbs.db
