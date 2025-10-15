@@ -38,11 +38,17 @@ pnpm-lock.yaml
 /.vite
 /.cache
 /.eslintcache
+__pycache__/
+*.pyc
 
 # Relatórios de testes
 /coverage
-.pdf
-* .pdf
+
+# Arquivos PDF e Excel
+*.pdf
+*.xls
+*.xlsx
+
 # Mac/Linux
 .DS_Store
 Thumbs.db
@@ -57,6 +63,5 @@ Desktop.ini
 # Banco de dados local
 *.db
 
-# Criptografia 
-
+# Criptografia
 secret.key

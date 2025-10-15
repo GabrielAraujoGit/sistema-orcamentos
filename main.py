@@ -1676,13 +1676,24 @@ class SistemaPedidos:
 
     # ------------------- Export PDF -------------------
     def gerar_pdf_orcamento(self, numero_pedido=None):
+        from reportlab.lib import colors
+        from reportlab.platypus import (
+            SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as PDFImage
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from datetime import datetime
+        import os
+
         try:
+            # === Seleção do orçamento ===
             if not numero_pedido:
                 selecionado = self.tree_orcamentos.selection()
                 if not selecionado:
                     messagebox.showwarning("Aviso", "Selecione um orçamento para gerar o PDF.")
                     return
                 numero_pedido = self.tree_orcamentos.item(selecionado, 'values')[0]
+
+            # === Buscar dados do pedido ===
             self.cursor.execute('''
                 SELECT p.numero_pedido, p.data_pedido, c.razao_social, c.cnpj, c.endereco, c.cidade, c.estado,
                     p.valor_produtos, p.valor_icms, p.valor_ipi, p.valor_pis, p.valor_cofins, 
@@ -1702,7 +1713,7 @@ class SistemaPedidos:
             subtotal, icms, ipi, pis, cofins, total, representante, cond_pag, desconto,
             status, observacoes, validade, empresa_id) = pedido
 
-            # === Buscar dados da empresa emissora ===
+            # === Dados da empresa ===
             if empresa_id:
                 self.cursor.execute("SELECT nome, cnpj, endereco, cidade, estado, telefone, email, caminho_logo FROM empresas WHERE id = ?", (empresa_id,))
                 emp = self.cursor.fetchone()
@@ -1729,23 +1740,26 @@ class SistemaPedidos:
                 WHERE i.numero_pedido = ?
             ''', (numero_pedido,))
             itens = self.cursor.fetchall()
+
             # === Caminho do arquivo ===
             nome_pdf = f"orcamento-{cliente_nome.replace(' ', '_')}-{datetime.now().strftime('%d-%m-%y')}.pdf"
             caminho_pdf = os.path.join(os.getcwd(), nome_pdf)
+
             # === Criar documento ===
             doc = SimpleDocTemplate(caminho_pdf, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=40, bottomMargin=30)
             story = []
 
-            # Buscar logo da empresa
-          
-
+            # ======== ESTILOS ========
             styles = getSampleStyleSheet()
-            estilo_normal = styles["Normal"]
-            dados_cabecalho = []
-            # Logo (se existir)
+            styles.add(ParagraphStyle('titulo', fontSize=14, leading=18, alignment=1, spaceAfter=12, textColor=colors.HexColor("#1A1A1A")))
+            styles.add(ParagraphStyle('normal', fontSize=10, leading=14, textColor=colors.HexColor("#333333")))
+            styles.add(ParagraphStyle('rodape', fontSize=8, alignment=1, textColor=colors.grey))
+            estilo_normal = styles["normal"]
+
+            # ======== CABEÇALHO ========
             logo_path = logo_emp if os.path.exists(logo_emp) else None
             if logo_path:
-                img = PDFImage(logo_path, width=120, height=50)
+                img = PDFImage(logo_path, width=100, height=40)
             else:
                 img = Paragraph("<b>Sem Logo</b>", estilo_normal)
 
@@ -1755,12 +1769,9 @@ class SistemaPedidos:
             {end_emp}, {cid_emp} - {est_emp}<br/>
             {email_emp} | {tel_emp}
             """
-            dados_cabecalho.append([img, Paragraph(info_empresa, estilo_normal)])
-
-            tabela_cab = Table(dados_cabecalho, colWidths=[130, 350])
+            tabela_cab = Table([[img, Paragraph(info_empresa, estilo_normal)]], colWidths=[120, 360])
             tabela_cab.setStyle(TableStyle([
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("TOPPADDING", (0, 0), (-1, -1), 10),
                 ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
             ]))
@@ -1769,20 +1780,23 @@ class SistemaPedidos:
             story.append(Table([[""]], colWidths=[500], style=[("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.grey)]))
             story.append(Spacer(1, 10))
 
-            # === Dados do orçamento ===
+            # ======== TÍTULO ========
+            story.append(Paragraph("ORÇAMENTO DE VENDA", styles["titulo"]))
+            story.append(Spacer(1, 10))
+
+            # ======== DADOS DO ORÇAMENTO ========
             dados_orc = f"""
-            <b>ORÇAMENTO Nº:</b> {num} &nbsp;&nbsp;&nbsp;&nbsp; <b>Data:</b> {data}<br/>
+            <b>ORÇAMENTO Nº:</b> {num} &nbsp;&nbsp; <b>Data:</b> {data}<br/>
             <b>Cliente:</b> {cliente_nome}<br/>
             <b>CNPJ:</b> {cliente_cnpj}<br/>
             <b>Endereço:</b> {cliente_end}, {cliente_cid} - {cliente_est}<br/>
-            <b>Representante:</b> {representante} &nbsp;&nbsp;&nbsp;&nbsp; <b>Status:</b> {status}<br/>
-            <b>Validade:</b> {validade or '-'} dias &nbsp;&nbsp;&nbsp;&nbsp; <b>Pagamento:</b> {cond_pag or '-'}
-
+            <b>Representante:</b> {representante} &nbsp;&nbsp;&nbsp; <b>Status:</b> {status}<br/>
+            <b>Validade:</b> {validade or '-'} dias &nbsp;&nbsp;&nbsp; <b>Pagamento:</b> {cond_pag or '-'}
             """
             story.append(Paragraph(dados_orc, estilo_normal))
             story.append(Spacer(1, 10))
 
-            # === Tabela de itens ===
+            # ======== TABELA DE ITENS ========
             cabecalho = ["Código", "Descrição", "Qtd", "V. Unitário", "Total"]
             linhas = [cabecalho]
             for cod, desc, qtd, valor in itens:
@@ -1795,43 +1809,57 @@ class SistemaPedidos:
                     f"R$ {total_item:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
                 ])
 
-            tabela = Table(linhas, colWidths=[70, 240, 50, 80, 80])
+            tabela = Table(linhas, colWidths=[70, 230, 50, 80, 80])
             tabela.setStyle(TableStyle([
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8E8E8")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor("#F9F9F9")]),
                 ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.grey),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.grey),
             ]))
             story.append(tabela)
             story.append(Spacer(1, 15))
 
-            # === Totais ===
+            # ======== TOTAIS ========
             dados_totais = [
-                ["Subtotal:", f"R$ {subtotal:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
-                ["ICMS:", f"R$ {icms:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
-                ["IPI:", f"R$ {ipi:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
-                ["PIS:", f"R$ {pis:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
-                ["COFINS:", f"R$ {cofins:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
-                ["Desconto:", f"R$ {desconto:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["Subtotal", f"R$ {subtotal:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["ICMS", f"R$ {icms:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["IPI", f"R$ {ipi:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["PIS", f"R$ {pis:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["COFINS", f"R$ {cofins:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["Desconto", f"R$ {desconto:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
                 ["", ""],
-                ["Total Geral:", f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
+                ["TOTAL GERAL", f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")],
             ]
             tabela_totais = Table(dados_totais, colWidths=[400, 100], hAlign="RIGHT")
             tabela_totais.setStyle(TableStyle([
                 ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
                 ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+                ("TEXTCOLOR", (0, -1), (-1, -1), colors.HexColor("#007B55")),
                 ("LINEABOVE", (0, -1), (-1, -1), 0.5, colors.black),
-                ("TOPPADDING", (0, -1), (-1, -1), 6),
             ]))
             story.append(tabela_totais)
             story.append(Spacer(1, 20))
+
+            # ======== OBSERVAÇÕES ========
             story.append(Paragraph("<b>Observações:</b>", styles["Heading5"]))
             story.append(Paragraph(observacoes or "Nenhuma", estilo_normal))
             story.append(Spacer(1, 30))
-            story.append(Spacer(1, 40))
             story.append(Paragraph("_____________________________________<br/>Assinatura do Representante", estilo_normal))
-            story.append(Spacer(1, 25))
-            doc.build(story)
+            story.append(Spacer(1, 20))
+
+            # ======== RODAPÉ COM DATA E PÁGINA ========
+            def rodape(canvas, doc):
+                canvas.saveState()
+                canvas.setFont("Helvetica", 8)
+                canvas.setFillColor(colors.grey)
+                canvas.drawString(40, 20, f"Emitido em {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+                canvas.drawRightString(560, 20, f"Página {doc.page}")
+                canvas.restoreState()
+
+            # ======== GERAÇÃO FINAL ========
+            doc.build(story, onFirstPage=rodape, onLaterPages=rodape)
             messagebox.showinfo("Sucesso", f"PDF gerado com sucesso:\n{caminho_pdf}")
             os.startfile(caminho_pdf)
 
