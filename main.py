@@ -461,7 +461,7 @@ class SistemaPedidos:
             for item in selecionados:
                 valores = self.tree_clientes.item(item, "values")
                 cliente_id = valores[0]
-                self.cursor.execute("DELETE FROM clientes WHERE id=?", (cliente_id,))
+                self.cursor.execute("DELETE FROM clientes WHERE cnpj=?", (cliente_id,))
             
             self.conn.commit()
             self.carregar_clientes()
@@ -812,7 +812,8 @@ class SistemaPedidos:
             for item in selecionados:
                 valores = self.tree_produtos.item(item, "values")
                 produto_id = valores[0]
-                self.cursor.execute("DELETE FROM produtos WHERE id=?", (produto_id,))
+                self.cursor.execute("DELETE FROM produtos WHERE codigo=?", (produto_id,))
+
             
             self.conn.commit()
             self.carregar_produtos()
