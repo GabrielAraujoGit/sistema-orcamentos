@@ -1751,7 +1751,7 @@ class SistemaPedidos:
             # ======== CABEÇALHO ========
             logo_path = logo_emp if os.path.exists(logo_emp) else None
             if logo_path:
-                img = PDFImage(logo_path, width=100, height=40)
+                img = PDFImage(logo_path, width=110, height=30)
             else:
                 img = Paragraph("<b>Sem Logo</b>", estilo_normal)
 
