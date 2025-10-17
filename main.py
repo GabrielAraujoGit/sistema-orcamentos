@@ -333,10 +333,12 @@ class SistemaPedidos:
         cols = ('ID', 'Razão Social', 'CNPJ', 'Cidade', 'Telefone')
         self.tree_clientes = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
         for col in cols:
-            self.tree_clientes.heading(col, text=col)
-            self.tree_clientes.column(col, width=140, anchor='center')
-            self.tree_clientes.column('ID', width=0, stretch=False)
+            if col != 'ID':  # só mostra as colunas que queremos exibir
+                self.tree_clientes.heading(col, text=col)
+                self.tree_clientes.column(col, width=140, anchor='center')
 
+        # Oculta totalmente a coluna ID (sem remover do dataset)
+        self.tree_clientes.column('ID', width=0, stretch=False)
         scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.tree_clientes.yview)
         self.tree_clientes.configure(yscrollcommand=scrollbar.set)
         self.tree_clientes.pack(side='left', fill='both', expand=True)
@@ -459,12 +461,19 @@ class SistemaPedidos:
             return
 
         try:
-            for item in selecionados:
-                valores = self.tree_clientes.item(item, "values")
-                cliente_id = valores[0]
-                self.cursor.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,))
-                
-                            
+           for item in selecionados:
+            valores = self.tree_clientes.item(item, "values")
+            cliente_id = valores[0]
+            
+            # Verifica se o cliente está vinculado a algum pedido
+            self.cursor.execute("SELECT COUNT(*) FROM pedidos WHERE cliente_id=?", (cliente_id,))
+            if self.cursor.fetchone()[0] > 0:
+                messagebox.showwarning("Aviso", f"Não é possível excluir o cliente ID {cliente_id}: há orçamentos vinculados.")
+                continue
+
+            # Exclui o cliente
+            self.cursor.execute("DELETE FROM clientes WHERE id=?", (cliente_id,))
+               
             self.conn.commit()
             self.carregar_clientes()
             messagebox.showinfo("Sucesso", f"{len(selecionados)} cliente(s) excluído(s) com sucesso!")
@@ -518,7 +527,7 @@ class SistemaPedidos:
         self.tree_orcamentos.bind("<Control-c>", self.copiar_celula_treeview)
         self.tree_orcamentos.bind("<Control-Double-1>", self.copiar_celula_treeview, add='+')
         # Configuração de cores só no texto do Status
-        self.tree_orcamentos.tag_configure("Em Aberto", foreground="#00EEFF")   # azul
+        self.tree_orcamentos.tag_configure("Em Aberto", foreground="#FBFF00")   # amarelo
         self.tree_orcamentos.tag_configure("Aprovado", foreground="#00ff5e")    # verde
         self.tree_orcamentos.tag_configure("Rejeitado", foreground="#FF0202")   # vermelho
         self.tree_orcamentos.tag_configure("Cancelado", foreground="#ff5900")   # laranja
