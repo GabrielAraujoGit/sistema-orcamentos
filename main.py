@@ -461,6 +461,7 @@ class SistemaPedidos:
             return
 
         try:
+<<<<<<< HEAD
            for item in selecionados:
             valores = self.tree_clientes.item(item, "values")
             cliente_id = valores[0]
@@ -474,6 +475,13 @@ class SistemaPedidos:
             # Exclui o cliente
             self.cursor.execute("DELETE FROM clientes WHERE id=?", (cliente_id,))
                
+=======
+            for item in selecionados:
+                valores = self.tree_clientes.item(item, "values")
+                cliente_id = valores[0]
+                self.cursor.execute("DELETE FROM clientes WHERE id=?", (cliente_id,))
+            
+>>>>>>> ca3af35a2b60c2e535142bf9162f3d609d7b42d7
             self.conn.commit()
             self.carregar_clientes()
             messagebox.showinfo("Sucesso", f"{len(selecionados)} cliente(s) excluído(s) com sucesso!")
@@ -698,7 +706,7 @@ class SistemaPedidos:
         ttk.Button(filtro_frame, text="Limpar", command=lambda: self.carregar_produtos()).pack(side='left', padx=5)
         list_frame = ttk.LabelFrame(frame, text="Produtos Cadastrados", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        cols = ('Código', 'Descrição','Origem', 'Valor', 'ICMS%', 'IPI%', 'PIS/COFINS%')
+        cols = ('Código', 'Descrição', 'Tipo', 'Origem', 'Valor', 'ICMS%', 'IPI%', 'PIS/COFINS%')
         self.tree_produtos = ttk.Treeview(list_frame, columns=cols, show='headings', height=12)
         for col in cols:
             self.tree_produtos.heading(col, text=col)
@@ -773,7 +781,7 @@ class SistemaPedidos:
             cofins = f"{row[8] * 100:.2f}%" if row[8] is not None else ""
             pis_cofins = f"{pis}/{cofins}"
 
-            valores = (row[0], row[3], row[4], icms, ipi, pis_cofins)
+            valores = (row[0], row[1], row[2], row[3], row[4], icms, ipi, pis_cofins)
             self.tree_produtos.insert('', 'end', values=valores)
 
     
@@ -823,8 +831,7 @@ class SistemaPedidos:
             for item in selecionados:
                 valores = self.tree_produtos.item(item, "values")
                 produto_id = valores[0]
-                self.cursor.execute("DELETE FROM produtos WHERE codigo=?", (produto_id,))
-
+                self.cursor.execute("DELETE FROM produtos WHERE id=?", (produto_id,))
             
             self.conn.commit()
             self.carregar_produtos()
@@ -1372,7 +1379,7 @@ class SistemaPedidos:
             return
         
         valores = self.tree_clientes.item(item[0], "values")
-        cliente_id = valores[0]  
+        cliente_id = valores[1]  
         self.cursor.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,))
         cliente = self.cursor.fetchone()
 
@@ -1688,6 +1695,14 @@ class SistemaPedidos:
 
     # ------------------- Export PDF -------------------
     def gerar_pdf_orcamento(self, numero_pedido=None):
+        from reportlab.lib import colors
+        from reportlab.platypus import (
+            SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as PDFImage
+        )
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from datetime import datetime
+        import os
+
         try:
             # === Seleção do orçamento ===
             if not numero_pedido:
@@ -1763,7 +1778,7 @@ class SistemaPedidos:
             # ======== CABEÇALHO ========
             logo_path = logo_emp if os.path.exists(logo_emp) else None
             if logo_path:
-                img = PDFImage(logo_path, width=110, height=30)
+                img = PDFImage(logo_path, width=100, height=40)
             else:
                 img = Paragraph("<b>Sem Logo</b>", estilo_normal)
 
@@ -1793,7 +1808,7 @@ class SistemaPedidos:
             <b>ORÇAMENTO Nº:</b> {num} &nbsp;&nbsp; <b>Data:</b> {data}<br/>
             <b>Cliente:</b> {cliente_nome}<br/>
             <b>CNPJ:</b> {cliente_cnpj}<br/>
-            <b>Endereço:</b> {cliente_end} {cliente_cid} - {cliente_est}<br/>
+            <b>Endereço:</b> {cliente_end}, {cliente_cid} - {cliente_est}<br/>
             <b>Representante:</b> {representante} &nbsp;&nbsp;&nbsp; <b>Status:</b> {status}<br/>
             <b>Validade:</b> {validade or '-'} dias &nbsp;&nbsp;&nbsp; <b>Pagamento:</b> {cond_pag or '-'}
             """
@@ -1815,7 +1830,7 @@ class SistemaPedidos:
 
             tabela = Table(linhas, colWidths=[70, 230, 50, 80, 80])
             tabela.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DFDFDF")),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E8E8E8")),
                 ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor("#F9F9F9")]),
                 ("ALIGN", (2, 1), (-1, -1), "RIGHT"),
                 ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
