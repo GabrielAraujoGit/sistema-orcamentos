@@ -830,7 +830,7 @@ class SistemaPedidos:
             for item in selecionados:
                 valores = self.tree_produtos.item(item, "values")
                 produto_id = valores[0]
-                self.cursor.execute("DELETE FROM produtos WHERE id=?", (produto_id,))
+                self.cursor.execute("DELETE FROM produtos WHERE codigo=?", (produto_id,))
             
             self.conn.commit()
             self.carregar_produtos()
