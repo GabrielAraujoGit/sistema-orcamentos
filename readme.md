@@ -1,11 +1,12 @@
 # EletroFlow — Sistema Interno de Orçamentos
 
-[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/Version-v1.0.0-green)](#)
-[![License](https://img.shields.io/badge/License-Internal-yellow)](#)
-[![Status](https://img.shields.io/badge/Status-Maintenance-orange)](#)
-[![Last Update](https://img.shields.io/badge/Updated-Oct_2025-lightgrey)](#)
-[![Support](https://img.shields.io/badge/Support-TI_Eletrofrio-blueviolet)](#)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
+[![Version](https://img.shields.io/badge/Version-v1.0.0-brightgreen?style=for-the-badge)](#)
+[![License](https://img.shields.io/badge/License-Internal-yellow?style=for-the-badge)](#)
+[![Status](https://img.shields.io/badge/Status-MAINTENANCE-orange?style=for-the-badge)](#)
+[![Last Update](https://img.shields.io/badge/Updated-Oct_2025-lightgrey?style=for-the-badge)](#)
+[![Support](https://img.shields.io/badge/Support-TI_Eletrofrio-8A2BE2?style=for-the-badge)](#)
+
 
 
 ## 📋 Sumário  
